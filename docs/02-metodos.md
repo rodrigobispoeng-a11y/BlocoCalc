@@ -194,6 +194,15 @@ menor energia de deformação, `mín Σ Ft·lt` (eq. 3.7).
 | Uso | Só comparação: o dimensionamento continua pelo pilar fictício até o MEF | D2, D10 |
 | Validação | B5 (Gomes §5.1, 4 estacas, binário de 320 e 2820 kN): recalcular e conferir as forças da Tab. 5.2 no modelo equivalente; enumeração por força bruta nos casos pequenos (até 7 nós) confirma o ótimo do programa linear | B5 |
 
+**B5 recalculado.** Com as reações exatas (3140/4 ± 500/3 kN), o modelo da Fig. 5.3 dá B1 = −279,3,
+B2 = −968,7, B3 = −1661,3, B4 = −270,8, T1 = 713,5, T2 = 1098,1 e T3 = 805,3 kN, iguais à Tab. 5.2
+a menos de 0,2 kN (arredondamento). O programa linear sobre as 15 ligações possíveis reproduz
+exatamente as mesmas bielas e a mesma energia `Σ Ft·lt` = 5133 kN·m, mas o ótimo não é único: troca
+parte de T1 e T3 por tirantes nas diagonais do fundo. As somas das projeções dos tirantes em x e em
+y são as mesmas nos dois arranjos, por isso o confronto com D10 usa essas somas. Para o arranjo
+impresso ser o construtivo, a proposta inclui um desempate: tirantes fora das direções x e y pesam
+0,1 % a mais.
+
 **Dependências novas:** `numpy` e `scipy` (programa linear `linprog`, método HiGHS), a registrar no
 `pyproject.toml`. Ambos têm wheels para Windows e serão necessários também na fase do MEF.
 
