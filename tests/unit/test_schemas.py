@@ -1,4 +1,4 @@
-"""Testes dos contratos v1."""
+"""Testes dos contratos (v2, com leitura da v1)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from blococalc.schemas import (
+    AggressivenessClass,
+    AnalysisResult,
     Cap,
     ColumnLoad,
+    DetailingInput,
     GeometryInput,
     LoadCase,
     LoadsInput,
@@ -67,3 +70,31 @@ def test_defaults_follow_approved_decisions() -> None:
     assert loads.gamma_n == 1.2
     materials = MaterialsInput(fck=35.0)
     assert (materials.gamma_c, materials.gamma_s, materials.fyk) == (1.4, 1.15, 500.0)
+
+
+def test_v1_documents_are_read_as_v2() -> None:
+    data = four_pile_cap().model_dump(mode="json")
+    data["schema_version"] = "1"
+    assert GeometryInput.model_validate(data).schema_version == "2"
+    v1_result = {
+        "schema_version": "1",
+        "rigid": True,
+        "reactions": [],
+        "checks": [],
+        "audit": {"app_version": "0.1.0", "method": "m", "input_hash": "x"},
+    }
+    assert AnalysisResult.model_validate(v1_result).reinforcement == ()
+
+
+def test_unknown_schema_version_is_rejected() -> None:
+    data = four_pile_cap().model_dump(mode="json")
+    data["schema_version"] = "3"
+    with pytest.raises(ValidationError):
+        GeometryInput.model_validate(data)
+
+
+def test_detailing_defaults() -> None:
+    options = DetailingInput()
+    assert options.bar_diameter == 16.0
+    assert options.aggressiveness_class is AggressivenessClass.II
+    assert options.hooked is True

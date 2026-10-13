@@ -6,13 +6,21 @@ import pytest
 
 from blococalc.core.reactions import rigid_cap_reactions
 from blococalc.core.strut_tie import Tie, santos_stucchi
-from blococalc.schemas import CheckStatus, ColumnLoad, GeometryInput, LoadCase, MaterialsInput
+from blococalc.schemas import (
+    CheckStatus,
+    ColumnLoad,
+    DetailingInput,
+    GeometryInput,
+    LoadCase,
+    MaterialsInput,
+)
 from blococalc.standards.detailing import rigid_cap_detailing
 from blococalc.standards.strength import strut_tie_strengths
 from tests.factories import four_pile_cap, two_pile_cap
 
 C35 = MaterialsInput(fck=35.0)
 FYD = 500.0 / 1.15
+PHI16 = DetailingInput(bar_diameter=16.0)
 
 
 def ties(geometry: GeometryInput, n: float) -> tuple[Tie, ...]:
@@ -24,7 +32,7 @@ def ties(geometry: GeometryInput, n: float) -> tuple[Tie, ...]:
 @pytest.mark.golden
 def test_b1_detailing() -> None:
     model_ties = ties(four_pile_cap(), 980e3)
-    result = rigid_cap_detailing(four_pile_cap(), model_ties, C35, 16.0, 50.0)
+    result = rigid_cap_detailing(four_pile_cap(), model_ties, C35, PHI16, 50.0)
 
     assert result.band_widths == {f"E{i}": pytest.approx(480.0) for i in range(1, 5)}
     # 20 % da soma das forças nos dois tirantes de cada direção.
@@ -44,7 +52,7 @@ def test_b1_detailing() -> None:
 def test_short_overhang_fails_anchorage() -> None:
     base = four_pile_cap()
     tight = base.model_copy(update={"cap": base.cap.model_copy(update={"lx": 1500.0})})
-    result = rigid_cap_detailing(tight, ties(base, 980e3), C35, 16.0, 50.0)
+    result = rigid_cap_detailing(tight, ties(base, 980e3), C35, PHI16, 50.0)
     x_ends = [c for c in result.checks if c.id in ("ancoragem_E1_E2_E1", "ancoragem_E1_E2_E2")]
     # 750 − 600 + 200 − 50 = 300 mm < 337,1 mm.
     assert [c.capacity for c in x_ends] == pytest.approx([300.0, 300.0])
@@ -54,13 +62,21 @@ def test_short_overhang_fails_anchorage() -> None:
 def test_wide_spacing_requires_suspension() -> None:
     base = four_pile_cap()
     shallow = four_pile_cap(h=390.0)  # 3·h = 1170 < 1200
-    result = rigid_cap_detailing(shallow, ties(base, 980e3), C35, 16.0, 50.0)
+    result = rigid_cap_detailing(shallow, ties(base, 980e3), C35, PHI16, 50.0)
     suspension = [c for c in result.checks if c.id.startswith("suspensao_")]
     assert all(c.status is CheckStatus.WARNING for c in suspension)
     assert any("suspensão" in w for w in result.warnings)
 
 
 def test_piles_in_one_line_require_lateral_and_top_bars() -> None:
-    result = rigid_cap_detailing(two_pile_cap(), ties(two_pile_cap(), 1000e3), C35, 16.0, 50.0)
+    result = rigid_cap_detailing(two_pile_cap(), ties(two_pile_cap(), 1000e3), C35, PHI16, 50.0)
     assert result.distribution_area_y == 0.0
     assert any("22.7.4.1.5" in w for w in result.warnings)
+
+
+def test_straight_bars_need_longer_anchorage_and_warn() -> None:
+    options = DetailingInput(bar_diameter=16.0, hooked=False)
+    result = rigid_cap_detailing(four_pile_cap(), ties(four_pile_cap(), 980e3), C35, options, 50.0)
+    anchorage = [c for c in result.checks if c.id.startswith("ancoragem_")]
+    assert anchorage[0].demand == pytest.approx(481.59, abs=0.01)  # α = 1,0
+    assert any("gancho" in w for w in result.warnings)

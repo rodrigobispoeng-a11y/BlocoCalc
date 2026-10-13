@@ -119,7 +119,9 @@ a iteração não tem raiz e `y` fica indefinido. Opções:
 
 1. `y` pelo equilíbrio horizontal do nó CCC (analogia com a flexão, que os próprios autores
    citam): a compressão horizontal que equilibra os tirantes atua numa faixa de altura `y` sob
-   tensão fcd1. No B1 dá y = 31 mm, θ = 48,7°, Ftd = 258,5 kN por diagonal. Recomendado.
+   tensão fcd1. Recomendado e aprovado (D6). Com as origens das bielas nos centroides das partes do
+   pilar voltadas para cada estaca e d′ = 50 mm, o B1 dá y = 87,3 mm, tg θ = 1,15 e tirantes de
+   200,5 kN (x) e 159,5 kN (y); ver `tests/unit/test_strut_tie.py`.
 2. `y = 0` (z = d): maior braço, menor armadura; contra a segurança.
 3. `y` por espraiamento a 45° como em Macedo (2022), y = 75 mm no B1: valor sem justificativa
    mecânica clara.
@@ -158,6 +160,8 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D4 | Pilar retangular nos modelos de bielas: o modelo é montado por direção, usando a dimensão do pilar naquela direção (ap em x, bp em y); nunca o lado menor para as duas | Padrão provisório (Claude); revisar |
 | D5 | `a` no critério `h ≥ (a − ap)/3`: dimensão do bloco na direção considerada (analogia literal com a sapata, e mais conservadora que usar a distância entre eixos) | Padrão provisório (Claude); revisar |
 | D6 | Profundidade `y` do nó CCC (Santos/Stucchi): equilíbrio horizontal do nó, com a compressão horizontal que equilibra os tirantes atuando sob fcd1 numa faixa de altura `y` (ver §4.1) | Aprovada (Rodrigo, 13/10/2026) |
+| D7 | Peso próprio do bloco = 5 % da força normal de cálculo de cada caso, no centro do bloco (NBR 6122:2019, 5.6 pede no mínimo 5 % da carga permanente; a normal de cálculo inclui variáveis, então fica a favor da segurança). Evita usar peso específico e γg, ainda não pinados | Padrão provisório (Claude); revisar |
+| D8 | `d′` (cabeça da estaca ao eixo do tirante) = cobrimento + φ/2 do tirante | Padrão provisório (Claude); revisar |
 
 ## 7. Ainda falta neste documento
 
