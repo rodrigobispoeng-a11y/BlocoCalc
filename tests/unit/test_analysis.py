@@ -162,12 +162,45 @@ def test_insufficient_cover_fails() -> None:
     assert next(c for c in failed.checks if c.id == "cobrimento").status is CheckStatus.FAIL
 
 
-def test_two_columns_are_rejected() -> None:
-    base = two_pile_cap()
-    second = Column(id="P2", x=300.0, y=0.0, bx=200.0, by=200.0)
-    geometry = base.model_copy(update={"columns": (*base.columns, second)})
-    with pytest.raises(ValueError, match="único pilar"):
-        analyze(geometry, C35, loads(1000e3))
+def two_columns(geometry: GeometryInput, n1: float, n2: float) -> tuple[GeometryInput, LoadsInput]:
+    """P1 em x = −300 e P2 em x = +300, ambos 200×200 (D10: pilar fictício)."""
+    columns = (
+        Column(id="P1", x=-300.0, y=0.0, bx=200.0, by=200.0),
+        Column(id="P2", x=300.0, y=0.0, bx=200.0, by=200.0),
+    )
+    case = LoadCase(
+        id="C1",
+        column_loads=(ColumnLoad(column_id="P1", n=n1), ColumnLoad(column_id="P2", n=n2)),
+    )
+    return (
+        geometry.model_copy(update={"columns": columns}),
+        LoadsInput(cases=(case,), include_cap_self_weight=False),
+    )
+
+
+@pytest.mark.golden
+def test_two_columns_on_a_rigid_cap() -> None:
+    # Resultante em x = (−500·300 + 300·300)/800 = −75 -> M = −60 000 kN·mm;
+    # R = 800/4 ∓ 60 000·600/(4·600²) = 225 kN à esquerda e 175 kN à direita.
+    geometry, cases = two_columns(four_pile_cap(), 500e3, 300e3)
+    result = analyze(geometry, C35, cases)
+    assert result.rigid
+    forces = {r.pile_id: r.force for r in result.reactions}
+    assert forces == pytest.approx({"E1": 225e3, "E2": 175e3, "E3": 175e3, "E4": 225e3})
+    ids = {c.id for c in result.checks}
+    assert {"C1:no_pilar_real_P1", "C1:no_pilar_real_P2"} <= ids
+    assert result.warnings[0].startswith("Vários pilares")
+    real = {c.id: c for c in result.checks}
+    assert real["C1:no_pilar_real_P1"].demand > real["C1:no_pilar_real_P2"].demand
+
+
+def test_two_columns_on_a_flexible_cap_punch_each_column() -> None:
+    geometry, cases = two_columns(flexible_cap(), 1000e3, 1000e3)
+    result = analyze(geometry, MaterialsInput(fck=30.0), cases)
+    assert not result.rigid
+    ids = {c.id for c in result.checks}
+    assert {"C1:puncao_C_P1", "C1:puncao_C_P2"} <= ids
+    assert "C1:puncao_C" not in ids
 
 
 def test_input_hash_tracks_inputs() -> None:
