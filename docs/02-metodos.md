@@ -141,7 +141,7 @@ a iteração não tem raiz e `y` fica indefinido. Opções:
 direção, coerente com D4) e de `d′` (proposta: cobrimento + φ/2 do tirante, medido da cabeça da
 estaca).
 
-## 4.2 Bloco flexível (especificação proposta, D9)
+## 4.2 Bloco flexível (especificação, D9 aprovada)
 
 A NBR 6118:2023 não dá método fechado para o bloco flexível: pede análise completa (22.7.2.2) e os
 requisitos de lajes e punção (22.7.4.2, Seções 19 e 20). A proposta combina as seções de
@@ -192,7 +192,8 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D6 | Profundidade `y` do nó CCC (Santos/Stucchi): equilíbrio horizontal do nó, com a compressão horizontal que equilibra os tirantes atuando sob fcd1 numa faixa de altura `y` (ver §4.1) | Aprovada (Rodrigo, 13/10/2026) |
 | D7 | Peso próprio do bloco = 5 % da força normal de cálculo de cada caso, no centro do bloco (NBR 6122:2019, 5.6 pede no mínimo 5 % da carga permanente; a normal de cálculo inclui variáveis, então fica a favor da segurança). Evita usar peso específico e γg, ainda não pinados | Aprovada (Rodrigo, 13/10/2026) |
 | D8 | `d′` (cabeça da estaca ao eixo do tirante) = cobrimento + φ/2 do tirante | Aprovada (Rodrigo, 13/10/2026) |
-| D9 | Bloco flexível: flexão nas seções S1 do CEB-70 com As pela NBR 6118 (17.2.2), cisalhamento 19.4.1 a d da face e punção no pilar 19.5 (C e C′), conforme §4.2; punção nas estacas de canto só alerta | Proposta |
+| D9 | Bloco flexível: flexão nas seções S1 do CEB-70 com As pela NBR 6118 (17.2.2), cisalhamento 19.4.1 a d da face e punção no pilar 19.5 (C e C′), conforme §4.2; punção nas estacas de canto só alerta | Aprovada (Rodrigo, 13/10/2026) |
+| D11 | Armadura de suspensão (22.7.4.1.3): sem método de cálculo na norma nem nas referências; o programa mantém o alerta e o item de área zero no resultado | Aprovada (Rodrigo, 13/10/2026) |
 
 ## 7. Ainda falta neste documento
 

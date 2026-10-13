@@ -1,6 +1,6 @@
 # ADR-003 — Armadura de flexão de bloco flexível no contrato (schemas v3)
 
-- Status: proposta
+- Status: aceita (Rodrigo, 13/10/2026)
 - Contexto: o bloco flexível (D9, docs/02-metodos.md §4.2) é dimensionado à flexão nas seções S1
   do CEB-70, não por tirantes. `ReinforcementKind` v2 só tem `tie`, `distribution`, `suspension`
   e `lateral_top`; marcar a armadura de flexão como `tie` faria a interface e o relatório tratarem
