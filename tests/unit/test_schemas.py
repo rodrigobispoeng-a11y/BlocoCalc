@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from blococalc.schemas import (
     Cap,
-    Column,
     ColumnLoad,
     GeometryInput,
     LoadCase,
@@ -15,19 +14,7 @@ from blococalc.schemas import (
     MaterialsInput,
     Pile,
 )
-
-
-def four_pile_cap() -> GeometryInput:
-    """Bloco de 4 estacas do exemplo B1 (Macedo 2022, §6.1), em mm."""
-    piles = tuple(
-        Pile(id=f"E{i + 1}", x=sx * 600.0, y=sy * 600.0, size=400.0)
-        for i, (sx, sy) in enumerate(((-1, -1), (1, -1), (1, 1), (-1, 1)))
-    )
-    return GeometryInput(
-        cap=Cap(lx=2000.0, ly=2000.0, h=1000.0, pile_embedment=100.0),
-        piles=piles,
-        columns=(Column(id="P1", x=0.0, y=0.0, bx=200.0, by=650.0),),
-    )
+from tests.factories import four_pile_cap
 
 
 def test_valid_geometry_round_trips_through_json() -> None:

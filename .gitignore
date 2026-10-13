@@ -11,3 +11,4 @@ dist/
 build/
 # Normas da ABNT são licenciadas: nunca versionar
 *.pdf
+.hypothesis/
