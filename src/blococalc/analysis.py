@@ -10,7 +10,9 @@ Premissas aprovadas (docs/02-metodos.md §6, registradas na trilha de auditoria)
 - D9: bloco flexível pelas seções S1 do CEB-70 com flexão, cisalhamento e punção da NBR 6118
   (docs/02-metodos.md §4.2);
 - D10: vários pilares viram um pilar fictício de área equivalente por caso; as reações usam os
-  pilares reais e o nó de cada pilar real é verificado à parte.
+  pilares reais e o nó de cada pilar real é verificado à parte;
+- D12: no bloco rígido com vários pilares, a treliça 3D de menor energia (M7) com os pilares
+  reais confronta as trações no fundo do modelo de pilar fictício (docs/02-metodos.md §4.3).
 """
 
 from __future__ import annotations
@@ -21,9 +23,10 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 from blococalc import __version__
+from blococalc.core.cap_truss import cap_truss
 from blococalc.core.flexible_cap import face_shears, punching_load, s1_moments
 from blococalc.core.reactions import rigid_cap_reactions
-from blococalc.core.strut_tie import santos_stucchi
+from blococalc.core.strut_tie import StrutTieModel, santos_stucchi
 from blococalc.geometry.fictitious_column import fictitious_column
 from blococalc.schemas import (
     AnalysisResult,
@@ -52,6 +55,7 @@ METHOD = "santos-stucchi-2019"
 FLEXIBLE_METHOD = "ceb70-nbr6118-flexao"  # ADR-003
 SECONDARY_RATIO = 0.20  # CEB-70 §3.2: armadura transversal ≥ 1/5 da principal
 SELF_WEIGHT_RATIO = 0.05  # D7
+_M7_TOLERANCE = 0.01  # diferença numérica aceita no confronto D10 × M7
 
 _TIE_REF = Reference(source="NBR 6118:2023", item="22.3.3 / 22.7.4.1.1")
 _DISTRIBUTION_REF = Reference(source="NBR 6118:2023", item="22.7.4.1.2")
@@ -59,6 +63,7 @@ _SUSPENSION_REF = Reference(source="NBR 6118:2023", item="22.7.4.1.3")
 _LATERAL_REF = Reference(source="NBR 6118:2023", item="22.7.4.1.5")
 _FLEXURE_REF = Reference(source="CEB-FIP 70 §3 / NBR 6118:2023", item="17.2.2")
 _DUCTILITY_REF = Reference(source="NBR 6118:2023", item="14.6.4.3")
+_M7_REF = Reference(source="Gomes (2015) / docs/02-metodos.md", item="eq. 3.7; D10, D12")
 
 _ASSUMPTIONS = (
     "Bloco rígido: reações lineares em planta, estacas de mesma rigidez (M1).",
@@ -77,8 +82,12 @@ _FLEXIBLE_ASSUMPTIONS = (
     "Peso próprio do bloco = 5 % da normal de cálculo de cada caso (D7).",
 )
 _MULTI_COLUMN_WARNING = (
-    "Vários pilares: modelo com pilar fictício de área equivalente (D10). Conferir com a treliça "
-    "3D (M7) quando disponível e prever armaduras complementares entre os pilares."
+    "Vários pilares: modelo com pilar fictício de área equivalente (D10), confrontado com a "
+    "treliça 3D dos pilares reais (M7, D12); prever armaduras complementares entre os pilares."
+)
+_M7_ASSUMPTION = (
+    "Vários pilares: treliça 3D de menor Σ Ft·lt (M7) com os pilares reais em quatro nós cada, "
+    "planos do M5 e peso próprio nos pilares, só para confronto (D12)."
 )
 _CORNER_PILES_WARNING = (
     "Bloco flexível: punção e cisalhamento junto às estacas de canto e de borda não são "
@@ -137,6 +146,12 @@ def analyze(
                 model, geometry.columns, normals, loads.gamma_n, strengths
             )
             checks += _tag(case.id, real)
+            ratio = SELF_WEIGHT_RATIO if loads.include_cap_self_weight else 0.0
+            m7_checks, m7_warnings = _space_truss_comparison(
+                geometry, case, loads.gamma_n, ratio, model
+            )
+            checks += _tag(case.id, m7_checks)
+            warnings += m7_warnings
         warnings += [w for w in result.warnings if w not in warnings]
         phi = options.bar_diameter
         items = [
@@ -186,7 +201,11 @@ def analyze(
         audit=AuditTrail(
             app_version=__version__,
             method=METHOD if rigid else FLEXIBLE_METHOD,
-            assumptions=_ASSUMPTIONS if rigid else _FLEXIBLE_ASSUMPTIONS,
+            assumptions=(
+                (*_ASSUMPTIONS, *((_M7_ASSUMPTION,) if multiple else ()))
+                if rigid
+                else _FLEXIBLE_ASSUMPTIONS
+            ),
             parameters={
                 "gamma_n": loads.gamma_n,
                 "tie_height_mm": tie_height,
@@ -285,6 +304,57 @@ def _flexible_case(
         for axis, direction in (("x", (1.0, 0.0)), ("y", (0.0, 1.0)))
     ]
     return checks, items, warnings
+
+
+def _space_truss_comparison(
+    geometry: GeometryInput,
+    case: LoadCase,
+    gamma_n: float,
+    self_weight_ratio: float,
+    model: StrutTieModel,
+) -> tuple[list[Check], list[str]]:
+    """Trações no fundo: treliça 3D dos pilares reais (M7) × pilar fictício (D10, D12).
+
+    Se o pilar fictício dá menos tração que o M7 numa direção, a verificação fica como alerta.
+    """
+    try:
+        truss = cap_truss(geometry, case, gamma_n, self_weight_ratio, (model.y / 2.0, model.d))
+    except ValueError as error:
+        return [], [
+            f"Caso {case.id}: treliça 3D (M7) sem solução, confronto D10 não feito: {error}"
+        ]
+    checks, warnings = [], []
+    for axis, m7, index in (("x", truss.tension_x, 0), ("y", truss.tension_y, 1)):
+        fictitious = sum(t.force_d * abs((t.dir_x, t.dir_y)[index]) for t in model.ties)
+        ok = m7 <= fictitious * (1.0 + _M7_TOLERANCE)
+        checks.append(
+            Check(
+                id=f"m7_tracao_{axis}",
+                description=f"Tração no fundo em {axis}: treliça 3D (M7) ≤ pilar fictício (D10)",
+                demand=m7,
+                capacity=fictitious,
+                unit="N",
+                status=CheckStatus.OK if ok else CheckStatus.WARNING,
+                reference=_M7_REF,
+            )
+        )
+        if not ok:
+            excess = 100.0 * (m7 / fictitious - 1.0) if fictitious > 0.0 else math.inf
+            warnings.append(
+                f"Caso {case.id}: a treliça 3D dos pilares reais (M7) pede {excess:.0f} % mais "
+                f"tração em {axis} que o pilar fictício (D10); revisar os tirantes nessa direção."
+            )
+    if truss.inclined_struts:
+        warnings.append(
+            f"Caso {case.id}: bielas da treliça 3D (M7) fora de 0,57 ≤ tg θ ≤ 2 "
+            f"(NBR 6118:2023, 22.3.1): {', '.join(truss.inclined_struts)}."
+        )
+    if truss.crossing_struts:
+        pairs = "; ".join(f"{a} × {b}" for a, b in truss.crossing_struts)
+        warnings.append(
+            f"Caso {case.id}: bielas da treliça 3D (M7) se cruzam fora dos nós: {pairs}."
+        )
+    return checks, warnings
 
 
 def _model_inputs(geometry: GeometryInput, case: LoadCase) -> tuple[GeometryInput, LoadCase]:

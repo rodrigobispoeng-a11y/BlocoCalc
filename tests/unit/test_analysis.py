@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
+from typing import Any
 
 import pytest
 
+from blococalc import analysis
 from blococalc.analysis import analyze
+from blococalc.core.cap_truss import cap_truss
 from blococalc.schemas import (
     Cap,
     CheckStatus,
@@ -192,6 +196,45 @@ def test_two_columns_on_a_rigid_cap() -> None:
     assert result.warnings[0].startswith("Vários pilares")
     real = {c.id: c for c in result.checks}
     assert real["C1:no_pilar_real_P1"].demand > real["C1:no_pilar_real_P2"].demand
+    # D12: a treliça 3D dos pilares reais pede menos tração que o pilar fictício aqui.
+    for axis in "xy":
+        m7 = real[f"C1:m7_tracao_{axis}"]
+        assert m7.status is CheckStatus.OK
+        assert 0.0 < m7.demand <= m7.capacity
+    assert any("M7" in a for a in result.audit.assumptions)
+
+
+def test_m7_above_the_fictitious_column_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_truss = cap_truss
+
+    def stronger(*args: Any, **kwargs: Any) -> Any:
+        truss = real_truss(*args, **kwargs)
+        return replace(
+            truss,
+            tension_x=10.0 * truss.tension_x,
+            inclined_struts=("P1a-E1",),
+            crossing_struts=(("P1a-E3", "P2b-E4"),),
+        )
+
+    monkeypatch.setattr(analysis, "cap_truss", stronger)
+    geometry, cases = two_columns(four_pile_cap(), 500e3, 300e3)
+    result = analyze(geometry, C35, cases)
+    check = next(c for c in result.checks if c.id == "C1:m7_tracao_x")
+    assert check.status is CheckStatus.WARNING
+    assert any("mais tração em x" in w for w in result.warnings)
+    assert any("P1a-E1" in w for w in result.warnings)
+    assert any("P1a-E3 × P2b-E4" in w for w in result.warnings)
+
+
+def test_m7_without_solution_only_warns(monkeypatch: pytest.MonkeyPatch) -> None:
+    def failing(*args: Any, **kwargs: Any) -> Any:
+        raise ValueError("teste")
+
+    monkeypatch.setattr(analysis, "cap_truss", failing)
+    geometry, cases = two_columns(four_pile_cap(), 500e3, 300e3)
+    result = analyze(geometry, C35, cases)
+    assert not any("m7" in c.id for c in result.checks)
+    assert any("sem solução" in w for w in result.warnings)
 
 
 def test_two_columns_on_a_flexible_cap_punch_each_column() -> None:

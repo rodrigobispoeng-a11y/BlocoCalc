@@ -185,7 +185,8 @@ menor energia de deformação, `mín Σ Ft·lt` (eq. 3.7).
 
 | Etapa | Regra | Fonte |
 |---|---|---|
-| Nós de carga | Um nó por pilar real no centro; com momento, binário nos centros das metades da seção na direção do momento (quatro nós com momento nas duas direções); nó tracionado ganha tirante vertical obrigatório até o fundo | Gomes §4.1, §4.5, §5.1.3 |
+| Nós de carga | Quatro nós por pilar real, nos centros dos quadrantes da seção (±bx/4, ±by/4), com `N/4 ± My/bx ± Mx/by` (H entra como momento com o braço do M1); são as origens das bielas do M5, de modo que com um só pilar as trações do M7 e do M5 coincidem (teste golden no B1). Nó tracionado ganha tirante vertical até o fundo, e estaca tracionada até o topo | Gomes §4.1, §4.5, §5.1.3; D6 |
+| Peso próprio | D7 em cada pilar (5 % da sua normal), com as reações M1 recalculadas assim, para o equilíbrio dos nós | D7 |
 | Planos | Topo a `y/2` abaixo da face superior, com `y` do M5 (D6) no mesmo caso; fundo no eixo do tirante (`d′`, D8). Assim o braço é o mesmo `z = d − y/2` do M5 e a comparação isola o efeito do pilar fictício | D6, D8 |
 | Reações | M1, as mesmas do restante da análise, aplicadas como forças nos nós das estacas | Gomes §4.4 |
 | Escolha do modelo | Mínimo de `Σ Ft·lt` sujeito ao equilíbrio de todos os nós, resolvido como programa linear sobre a estrutura de todas as ligações possíveis (ground structure); barras diagonais entre planos só podem ser bielas (Gomes §4.14). Dá o mesmo ótimo da enumeração quando ele é isostático e sem dependência do número de nós | Gomes eq. 3.7; Dorn, Gomory e Greenberg (1964) |
