@@ -1,4 +1,4 @@
-"""Primeira tela: entrada de um bloco com um pilar e um caso de carga, e tabelas de resultado.
+"""Primeira tela: entrada de um bloco com pilares, estacas e casos de carga em tabelas.
 
 Conversões de unidade só aqui (CLAUDE.md §4): a tela usa kN e kN·m; o motor, N e N·mm.
 A tela só conhece `blococalc.analysis` e `blococalc.schemas`.
@@ -6,7 +6,7 @@ A tela só conhece `blococalc.analysis` e `blococalc.schemas`.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from PySide6.QtWidgets import (
     QComboBox,
@@ -49,6 +49,8 @@ KNM = 1e6  # N·mm
 _DEFAULT_PILES = (("E1", -600.0, -600.0), ("E2", 600.0, -600.0), ("E3", 600.0, 600.0),
                   ("E4", -600.0, 600.0))  # fmt: skip
 _PILE_HEADERS = ("Estaca", "x [mm]", "y [mm]", "φ [mm]")
+_COLUMN_HEADERS = ("Pilar", "x [mm]", "y [mm]", "bx [mm]", "by [mm]")
+_LOAD_HEADERS = ("Caso", "Pilar", "Nd [kN]", "Mxd [kN·m]", "Myd [kN·m]", "Hxd [kN]", "Hyd [kN]")
 
 
 def _spin(value: float, maximum: float, decimals: int = 1, minimum: float = 0.0) -> QDoubleSpinBox:
@@ -57,6 +59,31 @@ def _spin(value: float, maximum: float, decimals: int = 1, minimum: float = 0.0)
     box.setDecimals(decimals)
     box.setValue(value)
     return box
+
+
+def _table(headers: Sequence[str], rows: Sequence[Sequence[object]]) -> QTableWidget:
+    table = QTableWidget(0, len(headers))
+    table.setHorizontalHeaderLabels(list(headers))
+    table.setMinimumHeight(150)
+    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+    for row in rows:
+        _append_row(table, row)
+    return table
+
+
+def _append_row(table: QTableWidget, values: Sequence[object]) -> None:
+    row = table.rowCount()
+    table.insertRow(row)
+    for column, value in enumerate(values):
+        table.setItem(row, column, QTableWidgetItem(str(value)))
+
+
+def _rows(table: QTableWidget) -> list[list[str]]:
+    """Texto das células; célula vazia vira "" e falha na conversão com mensagem na tela."""
+    cells = (
+        [table.item(row, c) for c in range(table.columnCount())] for row in range(table.rowCount())
+    )
+    return [[cell.text().strip() if cell else "" for cell in row] for row in cells]
 
 
 class MainWindow(QMainWindow):
@@ -74,32 +101,15 @@ class MainWindow(QMainWindow):
             "pile_embedment": _spin(100.0, 500.0),
             "cover": _spin(50.0, 200.0),
         }
-        self.column = {
-            "x": _spin(0.0, 10000.0, minimum=-10000.0),
-            "y": _spin(0.0, 10000.0, minimum=-10000.0),
-            "bx": _spin(200.0, 5000.0),
-            "by": _spin(650.0, 5000.0),
-        }
+        self.columns = _table(_COLUMN_HEADERS, [("P1", 0.0, 0.0, 200.0, 650.0)])
         self.materials = {"fck": _spin(35.0, 90.0), "fyk": _spin(500.0, 600.0)}
-        self.loads = {
-            "n": _spin(980.0, 1e6, minimum=-1e6),
-            "mx": _spin(0.0, 1e6, minimum=-1e6),
-            "my": _spin(0.0, 1e6, minimum=-1e6),
-            "hx": _spin(0.0, 1e6, minimum=-1e6),
-            "hy": _spin(0.0, 1e6, minimum=-1e6),
-        }
+        self.loads = _table(_LOAD_HEADERS, [("ELU1", "P1", 980.0, 0.0, 0.0, 0.0, 0.0)])
         self.gamma_n = _spin(1.2, 2.0, decimals=2, minimum=1.0)
         self.bar_diameter = _spin(16.0, 40.0)
         self.aggressiveness = QComboBox()
         self.aggressiveness.addItems([c.value for c in AggressivenessClass])
         self.aggressiveness.setCurrentText(AggressivenessClass.II.value)
-        self.piles = QTableWidget(0, len(_PILE_HEADERS))
-        self.piles.setHorizontalHeaderLabels(_PILE_HEADERS)
-        self.piles.setMinimumHeight(180)
-        self.piles.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        for pile_id, x, y in _DEFAULT_PILES:
-            self._append_pile(pile_id, x, y, 400.0)
-
+        self.piles = _table(_PILE_HEADERS, [(*pile, 400.0) for pile in _DEFAULT_PILES])
         self.summary = QPlainTextEdit(readOnly=True)
         self.reactions_table = QTableWidget()
         self.checks_table = QTableWidget()
@@ -115,36 +125,29 @@ class MainWindow(QMainWindow):
         form = QVBoxLayout()
         groups = (
             ("Bloco [mm]", self.cap, ("Lx", "Ly", "h", "Embutimento da estaca", "Cobrimento")),
-            ("Pilar [mm]", self.column, ("x", "y", "bx", "by")),
             ("Materiais [MPa]", self.materials, ("fck", "fyk")),
-            ("Caso de cálculo", self.loads,
-             ("Nd [kN]", "Mxd [kN·m]", "Myd [kN·m]", "Hxd [kN]", "Hyd [kN]")),
-        )  # fmt: skip
+        )
         for title, fields, labels in groups:
             box = QGroupBox(title)
             layout = QFormLayout(box)
             for label, widget in zip(labels, fields.values(), strict=True):
                 layout.addRow(label, widget)
-            if fields is self.loads:
-                layout.addRow("γn", self.gamma_n)
             form.addWidget(box)
         detailing = QGroupBox("Detalhamento")
         detailing_layout = QFormLayout(detailing)
+        detailing_layout.addRow("γn", self.gamma_n)
         detailing_layout.addRow("φ dos tirantes [mm]", self.bar_diameter)
         detailing_layout.addRow("Classe de agressividade", self.aggressiveness)
         form.addWidget(detailing)
 
-        piles_box = QGroupBox("Estacas")
-        piles_layout = QVBoxLayout(piles_box)
-        piles_layout.addWidget(self.piles)
-        buttons = QHBoxLayout()
-        add, remove = QPushButton("Adicionar"), QPushButton("Remover")
-        add.clicked.connect(lambda: self._append_pile(f"E{self.piles.rowCount() + 1}", 0, 0, 400))
-        remove.clicked.connect(lambda: self.piles.removeRow(self.piles.rowCount() - 1))
-        buttons.addWidget(add)
-        buttons.addWidget(remove)
-        piles_layout.addLayout(buttons)
-        form.addWidget(piles_box)
+        tables = (
+            ("Pilares", self.columns, lambda n: (f"P{n}", 0.0, 0.0, 200.0, 200.0)),
+            ("Estacas", self.piles, lambda n: (f"E{n}", 0.0, 0.0, 400.0)),
+            ("Casos de cálculo (um pilar por linha)", self.loads,
+             lambda n: ("ELU1", f"P{n}", 0.0, 0.0, 0.0, 0.0, 0.0)),
+        )  # fmt: skip
+        for title, table, default in tables:
+            form.addWidget(self._table_box(title, table, default))
         form.addWidget(self.calculate_button)
 
         tabs = QTabWidget()
@@ -168,43 +171,53 @@ class MainWindow(QMainWindow):
         central.setLayout(root)
         self.setCentralWidget(central)
 
-    def _append_pile(self, pile_id: str, x: float, y: float, size: float) -> None:
-        row = self.piles.rowCount()
-        self.piles.insertRow(row)
-        for column, value in enumerate((pile_id, x, y, size)):
-            self.piles.setItem(row, column, QTableWidgetItem(str(value)))
-
-    def _read_piles(self) -> tuple[Pile, ...]:
-        rows = []
-        for row in range(self.piles.rowCount()):
-            cells = [self.piles.item(row, c) for c in range(len(_PILE_HEADERS))]
-            pile_id, x, y, size = (cell.text() if cell else "" for cell in cells)
-            rows.append(Pile(id=pile_id, x=float(x), y=float(y), size=float(size)))
-        return tuple(rows)
+    @staticmethod
+    def _table_box(
+        title: str, table: QTableWidget, default: Callable[[int], Sequence[object]]
+    ) -> QGroupBox:
+        box = QGroupBox(title)
+        layout = QVBoxLayout(box)
+        layout.addWidget(table)
+        buttons = QHBoxLayout()
+        add, remove = QPushButton("Adicionar"), QPushButton("Remover")
+        add.clicked.connect(lambda: _append_row(table, default(table.rowCount() + 1)))
+        remove.clicked.connect(lambda: table.removeRow(table.rowCount() - 1))
+        buttons.addWidget(add)
+        buttons.addWidget(remove)
+        layout.addLayout(buttons)
+        return box
 
     def inputs(self) -> tuple[GeometryInput, MaterialsInput, LoadsInput, DetailingInput]:
-        """Lê o formulário e converte para os contratos (N, mm, MPa)."""
-        value = {name: box.value() for name, box in self.cap.items()}
+        """Lê o formulário e converte para os contratos (N, mm, MPa).
+
+        Linhas de carga com o mesmo caso formam um `LoadCase`, na ordem em que aparecem.
+        """
         geometry = GeometryInput(
-            cap=Cap(**value),
-            piles=self._read_piles(),
-            columns=(Column(id="P1", **{k: b.value() for k, b in self.column.items()}),),
-        )
-        materials = MaterialsInput(**{k: b.value() for k, b in self.materials.items()})
-        loads = self.loads
-        case = LoadCase(
-            id="ELU1",
-            column_loads=(
-                ColumnLoad(
-                    column_id="P1",
-                    n=loads["n"].value() * KN,
-                    mx=loads["mx"].value() * KNM,
-                    my=loads["my"].value() * KNM,
-                    hx=loads["hx"].value() * KN,
-                    hy=loads["hy"].value() * KN,
-                ),
+            cap=Cap(**{name: box.value() for name, box in self.cap.items()}),
+            piles=tuple(
+                Pile(id=i, x=float(x), y=float(y), size=float(d))
+                for i, x, y, d in _rows(self.piles)
+            ),
+            columns=tuple(
+                Column(id=i, x=float(x), y=float(y), bx=float(bx), by=float(by))
+                for i, x, y, bx, by in _rows(self.columns)
             ),
         )
+        materials = MaterialsInput(**{k: b.value() for k, b in self.materials.items()})
+        cases: dict[str, list[ColumnLoad]] = {}
+        for case_id, column_id, n, mx, my, hx, hy in _rows(self.loads):
+            cases.setdefault(case_id, []).append(
+                ColumnLoad(
+                    column_id=column_id,
+                    n=float(n) * KN,
+                    mx=float(mx) * KNM,
+                    my=float(my) * KNM,
+                    hx=float(hx) * KN,
+                    hy=float(hy) * KN,
+                )
+            )
+        if not cases:
+            raise ValueError("informe ao menos um caso de cálculo")
         detailing = DetailingInput(
             bar_diameter=self.bar_diameter.value(),
             aggressiveness_class=AggressivenessClass(self.aggressiveness.currentText()),
@@ -212,7 +225,10 @@ class MainWindow(QMainWindow):
         return (
             geometry,
             materials,
-            LoadsInput(cases=(case,), gamma_n=self.gamma_n.value()),
+            LoadsInput(
+                cases=tuple(LoadCase(id=k, column_loads=tuple(v)) for k, v in cases.items()),
+                gamma_n=self.gamma_n.value(),
+            ),
             detailing,
         )
 
