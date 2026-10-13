@@ -18,7 +18,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from blococalc.schemas import Check, CheckStatus, GeometryInput, MaterialsInput, Pile, Reference
+from blococalc.schemas import (
+    Check,
+    CheckStatus,
+    DetailingInput,
+    GeometryInput,
+    MaterialsInput,
+    Pile,
+    Reference,
+)
 from blococalc.standards.anchorage import (
     basic_anchorage_length,
     fbd,
@@ -62,7 +70,7 @@ def rigid_cap_detailing(
     geometry: GeometryInput,
     ties: Sequence[TieResult],
     materials: MaterialsInput,
-    bar_diameter: float,
+    options: DetailingInput,
     tie_height: float,
 ) -> Detailing:
     """Detalhamento de bloco rígido para um caso de carga.
@@ -71,6 +79,7 @@ def rigid_cap_detailing(
     modelo de bielas e tirantes.
     """
     piles = {pile.id: pile for pile in geometry.piles}
+    bar_diameter = options.bar_diameter
     fyd = materials.fyk / materials.gamma_s
     tension_x = sum(abs(t.force_d * t.dir_x) for t in ties)
     tension_y = sum(abs(t.force_d * t.dir_y) for t in ties)
@@ -80,7 +89,7 @@ def rigid_cap_detailing(
     good = is_good_bond_bottom_bar(cap.h, depth)
     basic = basic_anchorage_length(bar_diameter, fyd, fbd(materials, bar_diameter, good_bond=good))
     required = required_anchorage_length(
-        basic, bar_diameter, 1.0, hook_alpha=cap.cover >= 3.0 * bar_diameter
+        basic, bar_diameter, 1.0, hook_alpha=options.hooked and cap.cover >= 3.0 * bar_diameter
     )
 
     checks: list[Check] = []
@@ -114,6 +123,10 @@ def rigid_cap_detailing(
         )
 
     warnings = []
+    if not options.hooked:
+        warnings.append(
+            "Tirantes sem gancho: a NBR 6118:2023, 22.7.4.1.1 exige gancho nas duas pontas."
+        )
     if any(c.id.startswith("suspensao_") and c.status is CheckStatus.WARNING for c in checks):
         warnings.append(
             "Espaçamento entre estacas maior que 3·h: prever armadura de suspensão "

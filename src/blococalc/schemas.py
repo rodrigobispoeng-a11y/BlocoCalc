@@ -1,4 +1,4 @@
-"""Contratos de dados entre módulos (schemas v1).
+"""Contratos de dados entre módulos (schemas v2, ADR-002).
 
 Unidades internas fixas: N, mm, MPa. Conversões acontecem só nas bordas (UI e importação).
 Estes modelos são o único formato que atravessa a fronteira entre subpacotes. Mudanças
@@ -10,15 +10,27 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION: Literal["1"] = "1"
+SCHEMA_VERSION: Literal["2"] = "2"
+_READABLE_VERSIONS = ("1", "2")
 
 
 class _Contract(BaseModel):
     """Base dos contratos: imutável e sem campos desconhecidos."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class _Versioned(_Contract):
+    """Contrato de topo. Lê a v1 (ADR-002: a v2 só acrescenta campos com valor padrão)."""
+
+    schema_version: Literal["2"] = SCHEMA_VERSION
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def _upgrade(cls, value: object) -> object:
+        return SCHEMA_VERSION if value in _READABLE_VERSIONS else value
 
 
 # --------------------------------------------------------------------------------------
@@ -70,8 +82,7 @@ class Cap(_Contract):
     cover: float = Field(default=50.0, gt=0, description="Cobrimento nominal [mm]")
 
 
-class GeometryInput(_Contract):
-    schema_version: Literal["1"] = SCHEMA_VERSION
+class GeometryInput(_Versioned):
     cap: Cap
     piles: tuple[Pile, ...] = Field(min_length=1)
     columns: tuple[Column, ...] = Field(min_length=1)
@@ -104,8 +115,7 @@ class CombinationType(StrEnum):
     EXCEPTIONAL = "exceptional"
 
 
-class MaterialsInput(_Contract):
-    schema_version: Literal["1"] = SCHEMA_VERSION
+class MaterialsInput(_Versioned):
     fck: float = Field(gt=0, le=90, description="Resistência característica do concreto [MPa]")
     fyk: float = Field(default=500.0, gt=0, description="Resistência de escoamento do aço [MPa]")
     gamma_c: float = Field(default=1.4, ge=1.0, description="NBR 6118:2023, Tabela 12.1")
@@ -132,8 +142,7 @@ class LoadCase(_Contract):
     column_loads: tuple[ColumnLoad, ...] = Field(min_length=1)
 
 
-class LoadsInput(_Contract):
-    schema_version: Literal["1"] = SCHEMA_VERSION
+class LoadsInput(_Versioned):
     cases: tuple[LoadCase, ...] = Field(min_length=1)
     gamma_n: float = Field(
         default=1.2,
@@ -142,6 +151,25 @@ class LoadsInput(_Contract):
     )
     include_cap_self_weight: bool = Field(
         default=True, description="NBR 6122:2019, 5.6: peso próprio do bloco"
+    )
+
+
+class AggressivenessClass(StrEnum):
+    """Classe de agressividade ambiental (NBR 6118:2023, Tabela 6.1)."""
+
+    I = "I"  # noqa: E741 - nome da classe na norma
+    II = "II"
+    III = "III"
+    IV = "IV"
+
+
+class DetailingInput(_Versioned):
+    """Opções de detalhamento (ADR-002)."""
+
+    bar_diameter: float = Field(default=16.0, gt=0, description="Diâmetro dos tirantes [mm]")
+    aggressiveness_class: AggressivenessClass = AggressivenessClass.II
+    hooked: bool = Field(
+        default=True, description="Ganchos nas pontas dos tirantes (NBR 6118:2023, 22.7.4.1.1)"
     )
 
 
@@ -187,11 +215,32 @@ class AuditTrail(_Contract):
     input_hash: str = Field(description="SHA-256 das entradas serializadas")
 
 
-class AnalysisResult(_Contract):
-    schema_version: Literal["1"] = SCHEMA_VERSION
+class ReinforcementKind(StrEnum):
+    TIE = "tie"
+    DISTRIBUTION = "distribution"
+    SUSPENSION = "suspension"
+    LATERAL_TOP = "lateral_top"
+
+
+class Reinforcement(_Contract):
+    """Armadura calculada (ADR-002). `area_required` é a área mínima, não a efetiva."""
+
+    id: str = Field(min_length=1)
+    kind: ReinforcementKind
+    direction: tuple[float, float] = Field(
+        description="Vetor unitário em planta; (0, 0) quando a direção não se aplica"
+    )
+    force_d: float = Field(ge=0, description="Força de cálculo [N]")
+    area_required: float = Field(ge=0, description="Área de aço necessária [mm²]")
+    bar_diameter: float = Field(gt=0, description="[mm]")
+    reference: Reference
+
+
+class AnalysisResult(_Versioned):
     rigid: bool
     reactions: tuple[PileReaction, ...]
     checks: tuple[Check, ...]
+    reinforcement: tuple[Reinforcement, ...] = ()
     warnings: tuple[str, ...] = ()
     audit: AuditTrail
     disclaimer: str = (

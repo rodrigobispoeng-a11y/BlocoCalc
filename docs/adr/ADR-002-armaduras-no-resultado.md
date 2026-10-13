@@ -1,12 +1,12 @@
 # ADR-002 — Armaduras e detalhamento no contrato de resultado (schemas v2)
 
-- Status: proposta (aguarda aprovação do Rodrigo)
+- Status: aceita (Rodrigo, 13/10/2026)
 - Contexto: o motor já calcula tirantes, malha de distribuição e ancoragem
   (`core.strut_tie`, `standards.detailing`), mas `AnalysisResult` v1 só carrega reações,
   verificações e alertas. Sem um campo de armaduras, a interface e o relatório não têm como
   mostrar o resultado principal do dimensionamento. Também faltam na entrada o diâmetro das
   barras e a classe de agressividade ambiental, que o detalhamento precisa.
-- Decisão proposta: publicar `schemas` v2 com as mudanças abaixo. A v1 continua lida e é
+- Decisão: publicar `schemas` v2 com as mudanças abaixo. A v1 continua lida e é
   convertida para v2 com os valores padrão indicados.
   1. Novo `Reinforcement(id, kind, direction, force_d, area_required, bar_diameter, reference)`,
      com `kind` em {`tie`, `distribution`, `suspension`, `lateral_top`} e `direction` como
