@@ -8,7 +8,9 @@ Premissas aprovadas (docs/02-metodos.md §6, registradas na trilha de auditoria)
   normal de cálculo inclui as variáveis);
 - D8: eixo do tirante a d′ = cobrimento + φ/2 acima da cabeça da estaca;
 - D9: bloco flexível pelas seções S1 do CEB-70 com flexão, cisalhamento e punção da NBR 6118
-  (docs/02-metodos.md §4.2).
+  (docs/02-metodos.md §4.2);
+- D10: vários pilares viram um pilar fictício de área equivalente por caso; as reações usam os
+  pilares reais e o nó de cada pilar real é verificado à parte.
 """
 
 from __future__ import annotations
@@ -16,11 +18,13 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Sequence
+from dataclasses import replace
 
 from blococalc import __version__
 from blococalc.core.flexible_cap import face_shears, punching_load, s1_moments
 from blococalc.core.reactions import rigid_cap_reactions
 from blococalc.core.strut_tie import santos_stucchi
+from blococalc.geometry.fictitious_column import fictitious_column
 from blococalc.schemas import (
     AnalysisResult,
     AuditTrail,
@@ -42,7 +46,7 @@ from blococalc.standards.flexure import design_section
 from blococalc.standards.rigidity import rigidity_checks
 from blococalc.standards.slab_shear import one_way_shear_check, punching_checks
 from blococalc.standards.strength import strut_tie_strengths
-from blococalc.standards.strut_tie_checks import strut_tie_checks
+from blococalc.standards.strut_tie_checks import real_column_node_checks, strut_tie_checks
 
 METHOD = "santos-stucchi-2019"
 FLEXIBLE_METHOD = "ceb70-nbr6118-flexao"  # ADR-003
@@ -72,6 +76,10 @@ _FLEXIBLE_ASSUMPTIONS = (
     "Punção no pilar como pilar interno (19.5.2.2), sem armadura de punção.",
     "Peso próprio do bloco = 5 % da normal de cálculo de cada caso (D7).",
 )
+_MULTI_COLUMN_WARNING = (
+    "Vários pilares: modelo com pilar fictício de área equivalente (D10). Conferir com a treliça "
+    "3D (M7) quando disponível e prever armaduras complementares entre os pilares."
+)
 _CORNER_PILES_WARNING = (
     "Bloco flexível: punção e cisalhamento junto às estacas de canto e de borda não são "
     "verificados pelo programa (D9); conferir com modelo 3D."
@@ -84,23 +92,22 @@ def analyze(
     loads: LoadsInput,
     detailing: DetailingInput | None = None,
 ) -> AnalysisResult:
-    """Reações, verificações e armaduras de um bloco sobre estacas com um pilar.
+    """Reações, verificações e armaduras de um bloco sobre estacas.
 
-    Bloco classificado como flexível (NBR 6118:2023, 22.7.1) devolve só a classificação e as
-    reações, com alerta: o modelo rígido fica bloqueado (CLAUDE.md §8).
+    Bloco rígido por bielas e tirantes (Santos/Stucchi); bloco flexível (NBR 6118:2023, 22.7.1)
+    como laje sobre estacas (D9). Vários pilares entram como pilar fictício (D10).
     """
     options = detailing or DetailingInput()
-    if len(geometry.columns) != 1:
-        raise ValueError("A análise v1 aceita um único pilar por bloco")
+    multiple = len(geometry.columns) > 1
     tie_height = geometry.cap.cover + options.bar_diameter / 2.0
     strengths = strut_tie_strengths(materials)
 
     checks: list[Check] = [
-        *rigidity_checks(geometry.cap, geometry.columns[0]),
+        *rigidity_checks(geometry.cap, _model_inputs(geometry, loads.cases[0])[0].columns[0]),
         cover_check(geometry.cap, options.aggressiveness_class, options.bar_diameter),
     ]
     rigid = all(c.status is CheckStatus.OK for c in checks[:2])
-    warnings: list[str] = []
+    warnings: list[str] = [_MULTI_COLUMN_WARNING] if multiple else []
     reactions: list[PileReaction] = []
     envelope: dict[str, Reinforcement] = {}
 
@@ -120,9 +127,16 @@ def analyze(
             warnings += [w for w in flex_warnings if w not in warnings]
             _merge(envelope, flex_items)
             continue
-        model = santos_stucchi(geometry, case_reactions, strengths, loads.gamma_n, tie_height)
-        result = rigid_cap_detailing(geometry, model.ties, materials, options, tie_height)
+        model_geometry, _ = _model_inputs(geometry, case)
+        model = santos_stucchi(model_geometry, case_reactions, strengths, loads.gamma_n, tie_height)
+        result = rigid_cap_detailing(model_geometry, model.ties, materials, options, tie_height)
         checks += _tag(case.id, (*strut_tie_checks(model, strengths), *result.checks))
+        if multiple:
+            normals = {load.column_id: load.n for load in case.column_loads}
+            real = real_column_node_checks(
+                model, geometry.columns, normals, loads.gamma_n, strengths
+            )
+            checks += _tag(case.id, real)
         warnings += [w for w in result.warnings if w not in warnings]
         phi = options.bar_diameter
         items = [
@@ -201,6 +215,7 @@ def _flexible_case(
 ) -> tuple[list[Check], list[Reinforcement], list[str]]:
     """Flexão (S1), cortante e punção de um caso do bloco flexível (D9)."""
     case, reactions = loading
+    model_geometry, _ = _model_inputs(geometry, case)
     cap, phi = geometry.cap, options.bar_diameter
     depth_x = cap.h - cap.pile_embedment - (cap.cover + phi / 2.0)
     depths = {"x": depth_x, "y": depth_x - phi}
@@ -208,7 +223,7 @@ def _flexible_case(
     fyd = materials.fyk / materials.gamma_s
     checks: list[Check] = []
     area = {"x": 0.0, "y": 0.0}
-    for section in s1_moments(geometry, reactions, gamma_n, depths["x"], depths["y"]):
+    for section in s1_moments(model_geometry, reactions, gamma_n, depths["x"], depths["y"]):
         design = design_section(section.moment_d, section.width, cap.h, section.depth, materials)
         area[section.axis] = max(area[section.axis], design.area)
         checks.append(
@@ -229,7 +244,7 @@ def _flexible_case(
         "y": max(area["y"], SECONDARY_RATIO * area["x"]),
     }
     rho = {axis: area[axis] / (widths[axis] * depths[axis]) for axis in area}
-    for shear in face_shears(geometry, reactions, gamma_n, depths["x"], depths["y"]):
+    for shear in face_shears(model_geometry, reactions, gamma_n, depths["x"], depths["y"]):
         sign = "+" if shear.side > 0 else "-"
         checks.append(
             one_way_shear_check(
@@ -237,19 +252,26 @@ def _flexible_case(
             )
         )
     depth = (depths["x"] + depths["y"]) / 2.0
-    load = punching_load(geometry, case, reactions, gamma_n, depth)
-    c, c1 = punching_checks(
-        load, geometry.columns[0], depth, math.sqrt(rho["x"] * rho["y"]), materials
-    )
+    rho_punching = math.sqrt(rho["x"] * rho["y"])
+    multiple = len(geometry.columns) > 1
     warnings = []
-    if load.c1_inside_cap:
-        checks += [c, c1]
-    else:
-        checks.append(c)
-        warnings.append(
-            "Contorno C′ da punção (2d) sai do bloco: verificação em C′ não feita; conferir com "
-            "modelo 3D (NBR 6118:2023, 19.5.2.3)."
-        )
+    loaded = {load.column_id for load in case.column_loads}
+    for column in (c for c in geometry.columns if c.id in loaded):
+        single = geometry.model_copy(update={"columns": (column,)})
+        load = punching_load(single, case, reactions, gamma_n, depth)
+        if multiple:
+            # Uma estaca pode estar no C′ de mais de um pilar: sem desconto (a favor da segurança).
+            load = replace(load, force_c1=load.force_c, piles_inside_c1=())
+        c, c1 = punching_checks(load, column, depth, rho_punching, materials)
+        suffix = f"_{column.id}" if multiple else ""
+        checks.append(c.model_copy(update={"id": c.id + suffix}))
+        if load.c1_inside_cap:
+            checks.append(c1.model_copy(update={"id": c1.id + suffix}))
+        else:
+            warnings.append(
+                f"Contorno C′ da punção (2d) do pilar {column.id} sai do bloco: verificação em "
+                "C′ não feita; conferir com modelo 3D (NBR 6118:2023, 19.5.2.3)."
+            )
     items = [
         Reinforcement(
             id=f"flexao_{axis}",
@@ -263,6 +285,17 @@ def _flexible_case(
         for axis, direction in (("x", (1.0, 0.0)), ("y", (0.0, 1.0)))
     ]
     return checks, items, warnings
+
+
+def _model_inputs(geometry: GeometryInput, case: LoadCase) -> tuple[GeometryInput, LoadCase]:
+    """Geometria e caso do modelo: com vários pilares, o pilar fictício de área equivalente."""
+    if len(geometry.columns) == 1:
+        return geometry, case
+    column, load = fictitious_column(geometry.columns, case, geometry.cap)
+    return (
+        geometry.model_copy(update={"columns": (column,)}),
+        LoadCase(id=case.id, column_loads=(load,)),
+    )
 
 
 def _tag(case_id: str, checks: Sequence[Check]) -> list[Check]:

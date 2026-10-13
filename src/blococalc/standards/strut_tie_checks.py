@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from blococalc.schemas import Check, CheckStatus, Reference
+from blococalc.schemas import Check, CheckStatus, Column, Reference
 from blococalc.standards.strength import StrutTieStrengths
 
 TAN_THETA_MIN = 0.57
@@ -83,3 +83,36 @@ def strut_tie_checks(model: StrutTieResult, strengths: StrutTieStrengths) -> tup
         )
         for check_id, description, demand, capacity, unit, reference, failure in rows
     )
+
+
+def real_column_node_checks(
+    model: StrutTieResult,
+    columns: Sequence[Column],
+    normals: dict[str, float],
+    gamma_n: float,
+    strengths: StrutTieStrengths,
+) -> tuple[Check, ...]:
+    """Nó CCC sob cada pilar real quando o modelo usa pilar fictício (D10).
+
+    σcd,i = γn·Ni / ((bx + 2y)·(by + 2y)·sen²θmín) ≤ fcd1 (NBR 6118:2023, 22.3.2), com y do
+    modelo e a biela mais abatida: a favor da segurança frente à tensão média do pilar fictício.
+    """
+    tan_min = min(strut.tan_theta for strut in model.struts)
+    sin2 = tan_min * tan_min / (1.0 + tan_min * tan_min)
+    y = model.y
+    checks = []
+    for column in columns:
+        force = gamma_n * normals.get(column.id, 0.0)
+        stress = force / ((column.bx + 2.0 * y) * (column.by + 2.0 * y) * sin2)
+        checks.append(
+            Check(
+                id=f"no_pilar_real_{column.id}",
+                description=f"Nó CCC sob o pilar real {column.id}: σcd ≤ fcd1 (D10)",
+                demand=stress,
+                capacity=strengths.fcd1,
+                unit="MPa",
+                status=CheckStatus.OK if stress <= strengths.fcd1 else CheckStatus.FAIL,
+                reference=_NODES,
+            )
+        )
+    return tuple(checks)
