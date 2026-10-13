@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 import pytest
 
@@ -14,8 +15,16 @@ from blococalc.app.main_window import KN, MainWindow  # noqa: E402
 
 
 @pytest.fixture(scope="module")
-def app() -> object:
-    return QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+def app() -> Iterator[object]:
+    """Encerra o Qt antes da saída do interpretador: no Windows, destruir widgets durante o
+    encerramento do Python faz o processo terminar com código de erro mesmo com testes OK."""
+    application = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    yield application
+    for widget in QtWidgets.QApplication.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    QtWidgets.QApplication.processEvents()
+    application.shutdown()
 
 
 def test_defaults_reproduce_b1(app: object) -> None:
