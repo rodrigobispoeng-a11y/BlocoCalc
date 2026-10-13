@@ -9,14 +9,16 @@ bielas por MEF (fase posterior).
 
 ## Estado atual
 
-Ciclo 1: base normativa ([docs/02-metodos.md](docs/02-metodos.md)), esqueleto do pacote e
-contratos de dados v1. O motor analítico ainda não foi implementado.
+Motor de bloco rígido sobre 2, 3 ou 4 estacas com um pilar (Santos/Stucchi, NBR 6118:2023),
+detalhamento e primeira tela PySide6. Bloco flexível e vários pilares em andamento
+(decisões D9 e D10 em [docs/02-metodos.md](docs/02-metodos.md)).
 
 ## Desenvolvimento
 
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,app]"
 make check   # ruff + mypy --strict + pytest
+python -m blococalc.app   # abre a tela (ou o comando blococalc)
 ```
 
 Convenções de código e de trabalho: [CLAUDE.md](CLAUDE.md). Decisões de arquitetura:

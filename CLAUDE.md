@@ -25,7 +25,7 @@ src/blococalc/
 ├── fem/           # adapters gmsh/ccx (fase posterior)
 ├── viz/           # cenas PyVista/VTK (fase posterior)
 ├── persistence/   # projetos e resultados (fase posterior)
-└── app/           # PySide6: única camada que conhece Qt (fase posterior)
+└── app/           # PySide6: única camada que conhece Qt (python -m blococalc.app)
 tests/             # unit, golden, benchmark
 ```
 
@@ -38,7 +38,7 @@ Regras de dependência (verificadas em `tests/unit/test_architecture.py`):
 ## 3. Comandos
 
 ```bash
-python -m pip install -e ".[dev]"   # ou: make setup (conda)
+python -m pip install -e ".[dev,app]"   # ou: make setup (conda)
 make test        # pytest com cobertura
 make lint        # ruff check + ruff format --check
 make typecheck   # mypy --strict
