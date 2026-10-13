@@ -160,6 +160,43 @@ NBR 6118. Unidades N, mm, MPa.
 | Punção no pilar | Pilar interno com momento (19.5.2.2); C: `τSd ≤ τRd2` com `FSd` inteira; C′ a 2d: `τSd ≤ τRd1`, `FSd` menos as reações das estacas com eixo dentro de C′; se C′ sai do bloco, bloqueia com alerta | NBR 6118:2023, 19.5 |
 | Estacas de canto e de borda | Punção e cisalhamento local ficam como alerta até o MEF | CEB-70 §6.4; NBR 19.5.2.3/4 |
 
+## 4.3 Treliça 3D M7 (especificação proposta, D12 em análise)
+
+Objetivo (D10): confrontar o pilar fictício com um modelo espacial de bielas e tirantes que
+enxerga cada pilar real. Fonte: Gomes (2015), "Análise tridimensional automática de blocos de
+coroamento", cap. 3.4 e 4 (pasta REFERENCIAS-BIBLIOGRAFIA). Unidades N, mm, MPa.
+
+**Como a fonte faz.** Nós em dois planos: um nó por estaca no fundo e nós de carga no topo
+(momento do pilar vira binário de forças verticais nos centros das metades da seção, §5.1.3).
+Reações calculadas antes pelo estaqueamento (M1) e aplicadas como forças. O programa enumera todas
+as treliças isostáticas (3n − 6 barras entre as C(n,2) ligações possíveis), descarta as que têm
+nó com menos de três barras não coplanares, elementos sobrepostos, bielas que se cruzam fora dos
+nós, ângulo biela-tirante fora dos limites ou tirante diagonal entre os planos, e escolhe a de
+menor energia de deformação, `mín Σ Ft·lt` (eq. 3.7).
+
+**Achados na fonte.**
+- O vetor de energia implementado (eq. 4.51) soma só as forças dos tirantes, sem o comprimento,
+  ao contrário da eq. 3.7 que o próprio texto deduz. Seguimos a eq. 3.7.
+- A enumeração cresce como C(n(n−1)/2, 3n − 6): 455 modelos para 2 pilares e 4 estacas, mais de
+  13 milhões para 2 pilares e 6 estacas. Não serve para o B6 (16 estacas, 3 pilares), que é
+  justamente o caso que D10 precisa confrontar.
+
+**Proposta (D12).**
+
+| Etapa | Regra | Fonte |
+|---|---|---|
+| Nós de carga | Um nó por pilar real no centro; com momento, binário nos centros das metades da seção na direção do momento (quatro nós com momento nas duas direções); nó tracionado ganha tirante vertical obrigatório até o fundo | Gomes §4.1, §4.5, §5.1.3 |
+| Planos | Topo a `y/2` abaixo da face superior, com `y` do M5 (D6) no mesmo caso; fundo no eixo do tirante (`d′`, D8). Assim o braço é o mesmo `z = d − y/2` do M5 e a comparação isola o efeito do pilar fictício | D6, D8 |
+| Reações | M1, as mesmas do restante da análise, aplicadas como forças nos nós das estacas | Gomes §4.4 |
+| Escolha do modelo | Mínimo de `Σ Ft·lt` sujeito ao equilíbrio de todos os nós, resolvido como programa linear sobre a estrutura de todas as ligações possíveis (ground structure); barras diagonais entre planos só podem ser bielas (Gomes §4.14). Dá o mesmo ótimo da enumeração quando ele é isostático e sem dependência do número de nós | Gomes eq. 3.7; Dorn, Gomory e Greenberg (1964) |
+| Verificações depois do ótimo | Bielas que se cruzam fora dos nós e inclinação `0,57 ≤ tg θ ≤ 2` das bielas que chegam às estacas viram alerta; tensões nos nós dos pilares reais e das estacas pelas mesmas fórmulas do M5 | Gomes §4.12–4.13; NBR 6118:2023, 22.3.1 e 22.3.2 |
+| Confronto com D10 | Para cada direção, compara a força de tração total no fundo do M7 (soma das projeções dos tirantes) com a do modelo de pilar fictício; se o fictício ficar abaixo do M7, alerta com a diferença percentual | D10 |
+| Uso | Só comparação: o dimensionamento continua pelo pilar fictício até o MEF | D2, D10 |
+| Validação | B5 (Gomes §5.1, 4 estacas, binário de 320 e 2820 kN): recalcular e conferir as forças da Tab. 5.2 no modelo equivalente; enumeração por força bruta nos casos pequenos (até 7 nós) confirma o ótimo do programa linear | B5 |
+
+**Dependências novas:** `numpy` e `scipy` (programa linear `linprog`, método HiGHS), a registrar no
+`pyproject.toml`. Ambos têm wheels para Windows e serão necessários também na fase do MEF.
+
 ## 5. Benchmarks propostos
 
 Valores de referência serão **recalculados por nós** e conferidos contra a publicação. Diferenças
@@ -171,7 +208,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | B2 | Bloco 8 estacas, pilar 209×30, C35, φ60, h = 140 cm | Planilha "Bloco sobre N estacas" | M5 para N estacas, malha 20 %, armadura mínima | As < 2 % |
 | B3 | 17 ensaios de Blévot & Frémy (4N2, 4N4, séries de 4 estacas) | Santos et al. 2019, Tab. 1 | Carga de ruptura prevista × ensaio, por método | Relatório de razão Fprev/Fensaio (não é teste de igualdade) |
 | B4 | Exemplos de 5, 6, 7 e 16 estacas (simétricos e assimétricos) | CRSI Design Guide, cap. 8 | M1 (reações com momentos e estaqueamento assimétrico) | Reações < 1 % |
-| B5 | Exemplo de validação do programa 3D | Gomes 2015, §5.1 | M7 e futura verificação MEF | A definir |
+| B5 | Exemplo de validação do programa 3D | Gomes 2015, §5.1 | M7 e futura verificação MEF | Forças nas barras < 1 % (recalculadas) |
 | B6 | Bloco com 16 estacas e 3 pilares | Macedo 2022, §6.2 | M8 (múltiplos pilares) | A definir |
 
 **Problemas já encontrados em B1** (por isso recalculamos):
@@ -195,6 +232,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D9 | Bloco flexível: flexão nas seções S1 do CEB-70 com As pela NBR 6118 (17.2.2), cisalhamento 19.4.1 a d da face e punção no pilar 19.5 (C e C′), conforme §4.2; punção nas estacas de canto só alerta | Aprovada (Rodrigo, 13/10/2026) |
 | D10 | Vários pilares: pilar fictício de área equivalente (área = soma das áreas, lados na razão √(Sx/Sy) do grupo, na resultante das normais de cada caso), com verificação do nó de cada pilar real; o resultado deve ser confrontado com o modelo de treliça 3D (M7) quando ele for implementado | Aprovada (Rodrigo, 13/10/2026) |
 | D11 | Armadura de suspensão (22.7.4.1.3): sem método de cálculo na norma nem nas referências; o programa mantém o alerta e o item de área zero no resultado | Aprovada (Rodrigo, 13/10/2026) |
+| D12 | Treliça 3D (M7) para confrontar D10: ótimo de `Σ Ft·lt` (Gomes eq. 3.7) por programa linear sobre todas as ligações, com planos e reações iguais aos do M5, verificações de cruzamento e inclinação depois do ótimo, e alerta quando o pilar fictício dá menos tração que o M7; adiciona numpy e scipy (§4.3) | Proposta (Claude); aguarda Rodrigo |
 
 ## 7. Ainda falta neste documento
 
