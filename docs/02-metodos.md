@@ -207,6 +207,66 @@ impresso ser o construtivo, a proposta inclui um desempate: tirantes fora das di
 **Dependências novas:** `numpy` e `scipy` (programa linear `linprog`, método HiGHS), a registrar no
 `pyproject.toml`. Ambos têm wheels para Windows e serão necessários também na fase do MEF.
 
+## 4.4 M5 para N estacas (especificação, D13 proposta)
+
+Objetivo: levar o M5 (e com ele o pilar fictício, D10, e o confronto com o M7, D12) a blocos com 5
+ou mais estacas. Fonte: planilha "Bloco Sobre N estacas" (Mathcad, Macedo), que é o B2: bloco
+540×240×140 cm, 8 estacas φ60 em 4 linhas em x e 2 em y, pilar 209×30, C35, CA-50, cobrimento 5 cm,
+φ25 no tirante, reação de 113,96 tf na estaca mais solicitada.
+
+**Como a fonte faz.** Uma biela por estaca, do pilar até a estaca mais solicitada, com
+`Td = R·γf·γn·a/z` e `Tdx = Td·cos α`, `Tdy = Td·cos β`; `As` = maior entre esse valor e a
+armadura mínima. A profundidade comprimida `x` sai da tensão vertical sob o pilar ampliado a 45°
+(15,04 cm) e o braço é medido até a cabeça da estaca, `z = h − emb − x/2`.
+
+**Achados na fonte.**
+- `a = 161,4 cm` e `α = 24,719°` foram "medidos". Com as estacas espaçadas de 150 cm (2,5φ, 45 cm
+  da borda, o que fecha 540×240) e o pilar dividido em 4×2 partes iguais, a biela da estaca de
+  canto sai do centroide da parte correspondente e dá exatamente 161,4 cm e 24,719°. É a mesma
+  regra do M5 (centroide da parte do pilar voltada para a estaca), em grade.
+- O tirante por estaca não equilibra a linha de estacas. Numa linha com 4 estacas, o trecho
+  central recebe a componente horizontal da estaca de canto **mais** a da estaca interna. No B2
+  o trecho central pede 33 % mais que o de canto. A treliça M7 com os mesmos nós confirma o valor
+  acumulado (soma das trações igual a 1e-6).
+- `Fzk_pil` é calculado como 8 × 113,96 = 911,68 tf e depois sobrescrito por 435,97 tf, usado só
+  na profundidade `x`. Os dois valores não são compatíveis com reação igual nas 8 estacas.
+- Com D6 como está (compressão horizontal atravessando uma face da largura do pilar), o B2 não tem
+  solução: o pilar-parede de 30 cm não equilibra a compressão em x e `y` passa de `d`.
+
+**Especificação proposta (D13).**
+
+| Etapa | Regra | Fonte |
+|---|---|---|
+| Escopo | Estacas em grade retangular completa, nx × ny (nx, ny ≥ 1, nx·ny ≥ 5), todas comprimidas, um pilar (vários pilares pelo pilar fictício, D10). 2 a 4 estacas seguem a §4.1. Outros arranjos (5 em quincôncio, hexágono) continuam bloqueados com aviso | planilha N estacas |
+| Origem das bielas | Pilar dividido em nx × ny partes iguais; a biela de cada estaca sai do centroide da parte de mesma linha e coluna. Para 2×2 dá os quadrantes da §4.1. Estaca sob o centroide da sua parte vira biela vertical: sem tirante e sem limite de inclinação, com o nó verificado com sen²θ = 1 | D6; planilha N estacas |
+| Profundidade `y` | Equilíbrio horizontal do nó (D6), com a face espraiada a 45°: largura `by + 2y` para a compressão em x e `bx + 2y` em y, coerente com a área ampliada `(ac + 2y)(bc + 2y)` da eq. (20). Ver opções abaixo | D6 (revisão) |
+| Tirantes | Um tirante por linha de estacas em x e por coluna em y, com trechos entre estacas vizinhas. Força em cada trecho por equilíbrio dos nós: a maior entre a soma das componentes horizontais das estacas de um lado e a do outro. `As = Ftd/fyd` por trecho, faixa sobre as estacas | NBR 6118:2023, 22.3.3 e 22.7.4.1.1 |
+| Demais verificações | Iguais às da §4.1 (fcd1, fcd3, `0,57 ≤ tg θ ≤ 2`, `y/d ≤ 0,3`), por estaca | NBR 6118:2023, 22.3.1 e 22.3.2 |
+| Validação | B2 recalculado (abaixo); M7 com um nó por parte do pilar reproduz a soma das trações em cada direção; propriedade de equilíbrio e simetria em grades 2×3, 3×3 e 4×4 | B2, B5 |
+
+**Opções para a face do nó (decisão do Rodrigo).**
+
+| Opção | Regra | B1 (4 estacas, aprovado) | B2 |
+|---|---|---|---|
+| 1 (recomendada) | Face espraiada a 45° em todos os blocos | `y` 87,3 → 55,2 mm; tirante em x 200,5 → 196,6 kN (−2 %); golden do B1 atualizado com esta justificativa | `y` = 368,0 mm (`y/d` = 0,297), `z` = 1053,5 mm |
+| 2 | Face espraiada só em blocos com 5 ou mais estacas | Inalterado | Igual à opção 1; o mesmo bloco muda de regra ao passar de 4 para 5 estacas |
+| 3 | Face igual à largura do bloco (analogia com a flexão) | `y` 87,3 → 10,5 mm; tirante em x 200,5 → 191,4 kN (−4,5 %) | `y` = 143,6 mm, próximo dos 150,4 mm da fonte |
+
+**B2 recalculado (opção 1).** d′ = 50 + 12,5 = 62,5 mm (D8), d = 1400 − 100 − 62,5 = 1237,5 mm,
+Rd = 1,4 × 1,2 × 113,96 tf = 1877,4 kN em todas as estacas, fcd1 = 18,28 MPa.
+
+| Grandeza | Fonte | Recalculado | Diferença |
+|---|---|---|---|
+| Lproj e α da estaca de canto | 161,4 cm; 24,719° | 161,42 cm; 24,719° | confere |
+| tg θ, canto / interna | 0,759 / — | 0,653 / 1,264 | braço até o tirante (D8) e `y` por D6 |
+| Tirante em x, trecho de canto | 2247,4 kN (51,69 cm²) | 2613,1 kN (60,10 cm²) | braço menor |
+| Tirante em x, trecho central | não calcula | 3484,2 kN (80,14 cm²) | equilíbrio da linha |
+| Tirante em y | 1034,6 kN (23,80 cm²) | 1203,0 kN (27,67 cm²) | braço menor |
+
+Como a fonte usa outro braço e não equilibra a linha, o B2 não é teste de igualdade com a
+publicação: os goldens são os valores recalculados, e a geometria das bielas (Lproj, α) confere
+com a fonte a 0,1 %.
+
 ## 5. Benchmarks propostos
 
 Valores de referência serão **recalculados por nós** e conferidos contra a publicação. Diferenças
@@ -215,7 +275,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | ID | Caso | Fonte | O que valida | Tolerância |
 |---|---|---|---|---|
 | B1 | Bloco 4 estacas, pilar 20×65, Fk = 700 kN, φ40, L = 120 cm, h = 100 cm, C35 | Macedo 2022, §6.1 (Tab. 6.1) | M3, M4, M5, M6 no mesmo caso | As < 2 % |
-| B2 | Bloco 8 estacas, pilar 209×30, C35, φ60, h = 140 cm | Planilha "Bloco sobre N estacas" | M5 para N estacas, malha 20 %, armadura mínima | As < 2 % |
+| B2 | Bloco 8 estacas (4×2), pilar 209×30, C35, φ60, h = 140 cm | Planilha "Bloco sobre N estacas" | M5 para N estacas (§4.4), malha 20 %, armadura mínima | As < 2 % contra o recalculado; geometria das bielas contra a fonte |
 | B3 | 17 ensaios de Blévot & Frémy (4N2, 4N4, séries de 4 estacas) | Santos et al. 2019, Tab. 1 | Carga de ruptura prevista × ensaio, por método | Relatório de razão Fprev/Fensaio (não é teste de igualdade) |
 | B4 | Exemplos de 5, 6, 7 e 16 estacas (simétricos e assimétricos) | CRSI Design Guide, cap. 8 | M1 (reações com momentos e estaqueamento assimétrico) | Reações < 1 % |
 | B5 | Exemplo de validação do programa 3D | Gomes 2015, §5.1 | M7 e futura verificação MEF | Forças nas barras < 1 % (recalculadas) |
@@ -243,6 +303,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D10 | Vários pilares: pilar fictício de área equivalente (área = soma das áreas, lados na razão √(Sx/Sy) do grupo, na resultante das normais de cada caso), com verificação do nó de cada pilar real; o resultado deve ser confrontado com o modelo de treliça 3D (M7) quando ele for implementado | Aprovada (Rodrigo, 13/10/2026) |
 | D11 | Armadura de suspensão (22.7.4.1.3): sem método de cálculo na norma nem nas referências; o programa mantém o alerta e o item de área zero no resultado | Aprovada (Rodrigo, 13/10/2026) |
 | D12 | Treliça 3D (M7) para confrontar D10: ótimo de `Σ Ft·lt` (Gomes eq. 3.7) por programa linear sobre todas as ligações, com planos e reações iguais aos do M5, verificações de cruzamento e inclinação depois do ótimo, e alerta quando o pilar fictício dá menos tração que o M7; adiciona numpy e scipy (§4.3) | Aprovada (Rodrigo, 13/10/2026) |
+| D13 | M5 para N estacas em grade retangular: pilar dividido em nx × ny partes, tirantes por linha e coluna com força por equilíbrio dos nós, face do nó D6 espraiada a 45° (§4.4) | Proposta (Claude); aguarda Rodrigo |
 
 ## 7. Ainda falta neste documento
 
