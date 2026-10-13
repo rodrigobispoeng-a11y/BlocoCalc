@@ -242,6 +242,7 @@ armadura mínima. A profundidade comprimida `x` sai da tensão vertical sob o pi
 | Origem das bielas | Pilar dividido em nx × ny partes iguais; a biela de cada estaca sai do centroide da parte de mesma linha e coluna. Para 2×2 dá os quadrantes da §4.1. Estaca sob o centroide da sua parte vira biela vertical: sem tirante e sem limite de inclinação, com o nó verificado com sen²θ = 1 | D6; planilha N estacas |
 | Profundidade `y` | Equilíbrio horizontal do nó (D6), com a face espraiada a 45°: largura `by + 2y` para a compressão em x e `bx + 2y` em y, coerente com a área ampliada `(ac + 2y)(bc + 2y)` da eq. (20). Vale para todos os blocos, inclusive 2 a 4 estacas (opção 1 abaixo) | D6 (revisão pela D13) |
 | Tirantes | Um tirante por linha de estacas em x e por coluna em y, com trechos entre estacas vizinhas. Força em cada trecho por equilíbrio dos nós: a maior entre a soma das componentes horizontais das estacas de um lado e a do outro. `As = Ftd/fyd` por trecho, faixa sobre as estacas | NBR 6118:2023, 22.3.3 e 22.7.4.1.1 |
+| Detalhamento | Trechos alinhados de uma linha formam uma barra contínua com a armadura do trecho mais carregado; ancoragem verificada só nas estacas das pontas; a malha de 20 % (22.7.4.1.2) soma o trecho mais carregado de cada linha | NBR 6118:2023, 22.7.4.1.1 e 22.7.4.1.2 |
 | Demais verificações | Iguais às da §4.1 (fcd1, fcd3, `0,57 ≤ tg θ ≤ 2`, `y/d ≤ 0,3`), por estaca | NBR 6118:2023, 22.3.1 e 22.3.2 |
 | Validação | B2 recalculado (abaixo); M7 com um nó por parte do pilar reproduz a soma das trações em cada direção; propriedade de equilíbrio e simetria em grades 2×3, 3×3 e 4×4 | B2, B5 |
 
@@ -252,6 +253,13 @@ armadura mínima. A profundidade comprimida `x` sai da tensão vertical sob o pi
 | 1 (recomendada) | Face espraiada a 45° em todos os blocos | `y` 87,3 → 55,2 mm; tirante em x 200,5 → 196,6 kN (−2 %); golden do B1 atualizado com esta justificativa | `y` = 368,0 mm (`y/d` = 0,297), `z` = 1053,5 mm |
 | 2 | Face espraiada só em blocos com 5 ou mais estacas | Inalterado | Igual à opção 1; o mesmo bloco muda de regra ao passar de 4 para 5 estacas |
 | 3 | Face igual à largura do bloco (analogia com a flexão) | `y` 87,3 → 10,5 mm; tirante em x 200,5 → 191,4 kN (−4,5 %) | `y` = 143,6 mm, próximo dos 150,4 mm da fonte |
+
+**B6 com a D13.** Pela figura, as 12 estacas formam uma grade 4×3 e o bloco passa pela análise
+completa (`tests/benchmark/test_large_caps.py`). Com as cargas de 1100, 900 e 200 kN × 1,4, o
+pilar fictício dá 2299 kN de tração em x e 1765 kN em y, contra 838 e 474 kN da treliça M7: fica
+do lado seguro, como D10 exige. A soma das armaduras do pilar fictício em x (≈ 22 cm²) fica longe
+dos 75,6 cm² do texto, que usa outra geometria (200×200 cm, 16 estacas); sem dados consistentes, o
+B6 não vira teste de igualdade.
 
 **B2 recalculado (opção 1).** d′ = 50 + 12,5 = 62,5 mm (D8), d = 1400 − 100 − 62,5 = 1237,5 mm,
 Rd = 1,4 × 1,2 × 113,96 tf = 1877,4 kN em todas as estacas, fcd1 = 18,28 MPa.
@@ -280,7 +288,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | B3 | 17 ensaios de Blévot & Frémy (4N2, 4N4, séries de 4 estacas) | Santos et al. 2019, Tab. 1 | Carga de ruptura prevista × ensaio, por método | Relatório de razão Fprev/Fensaio (não é teste de igualdade) |
 | B4 | Exemplos de 5, 6, 7 e 16 estacas (simétricos e assimétricos) | CRSI Design Guide, cap. 8 | M1 (reações com momentos e estaqueamento assimétrico) | Reações < 1 % |
 | B5 | Exemplo de validação do programa 3D | Gomes 2015, §5.1 | M7 e futura verificação MEF | Forças nas barras < 1 % (recalculadas) |
-| B6 | Bloco com 16 estacas e 3 pilares | Macedo 2022, §6.2 | M8 (múltiplos pilares) | A definir |
+| B6 | Bloco com 3 pilares; pela figura, 330×300×140 cm e 12 estacas φ30 em grade 4×3 (o texto diz 200×200 cm e 16 estacas) | Macedo 2022, §6.2, Fig. 5.1/6.6 | M8 (D10) confrontado com M7 (D12) | Pilar fictício com mais tração que o M7 em x e em y; As da fonte não comparável (dados inconsistentes) |
 
 **Problemas já encontrados em B1** (por isso recalculamos):
 - Blévot: Macedo usa θ = 52° medido no CAD; pela geometria do modelo, `tg θ = d / (L√2/2 − ap√2/4)` dá θ = 49,2°. A força no tirante (254,09 kN) e As (5,84 cm²) conferem.
