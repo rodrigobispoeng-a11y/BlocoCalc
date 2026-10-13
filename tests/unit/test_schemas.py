@@ -16,6 +16,9 @@ from blococalc.schemas import (
     LoadsInput,
     MaterialsInput,
     Pile,
+    Reference,
+    Reinforcement,
+    ReinforcementKind,
 )
 from tests.factories import four_pile_cap
 
@@ -72,10 +75,11 @@ def test_defaults_follow_approved_decisions() -> None:
     assert (materials.gamma_c, materials.gamma_s, materials.fyk) == (1.4, 1.15, 500.0)
 
 
-def test_v1_documents_are_read_as_v2() -> None:
+@pytest.mark.parametrize("old", ["1", "2"])
+def test_older_documents_are_read_as_v3(old: str) -> None:
     data = four_pile_cap().model_dump(mode="json")
-    data["schema_version"] = "1"
-    assert GeometryInput.model_validate(data).schema_version == "2"
+    data["schema_version"] = old
+    assert GeometryInput.model_validate(data).schema_version == "3"
     v1_result = {
         "schema_version": "1",
         "rigid": True,
@@ -88,7 +92,7 @@ def test_v1_documents_are_read_as_v2() -> None:
 
 def test_unknown_schema_version_is_rejected() -> None:
     data = four_pile_cap().model_dump(mode="json")
-    data["schema_version"] = "3"
+    data["schema_version"] = "4"
     with pytest.raises(ValidationError):
         GeometryInput.model_validate(data)
 
@@ -98,3 +102,16 @@ def test_detailing_defaults() -> None:
     assert options.bar_diameter == 16.0
     assert options.aggressiveness_class is AggressivenessClass.II
     assert options.hooked is True
+
+
+def test_flexure_reinforcement_kind() -> None:
+    item = Reinforcement(
+        id="flexao_x",
+        kind="flexure",
+        direction=(1.0, 0.0),
+        force_d=0.0,
+        area_required=6358.5,
+        bar_diameter=16.0,
+        reference=Reference(source="NBR 6118:2023", item="17.2.2"),
+    )
+    assert item.kind is ReinforcementKind.FLEXURE

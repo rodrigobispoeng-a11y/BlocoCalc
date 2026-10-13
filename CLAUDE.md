@@ -17,7 +17,7 @@ Pacote único (ADR-001):
 
 ```
 src/blococalc/
-├── schemas.py     # contratos v2 (Pydantic, ADR-002): entradas, DetailingInput, AnalysisResult
+├── schemas.py     # contratos v3 (Pydantic, ADR-002 e ADR-003): entradas, DetailingInput, AnalysisResult
 ├── analysis.py    # monta a análise completa; única ponte entre core e standards
 ├── core/          # motor analítico — funções puras, ZERO I/O
 ├── standards/     # verificações NBR — funções puras
