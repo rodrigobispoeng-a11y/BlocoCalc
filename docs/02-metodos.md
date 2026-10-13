@@ -104,7 +104,7 @@
 | M5 | Santos/Stucchi (2013) — espraiamento a 45°, área ampliada, limites fcd1/fcd3 da NBR 6118 | Santos, Carvalho, Stucchi 2019; Macedo §6.1.4; planilha "Bloco sobre N estacas" | **Padrão** do motor |
 | M6 | CEB-FIP 70 — seções de referência S1 (0,15·ap da face), S2; `As = Md/(0,85·d·fyd)`; `Vd,lim = 0,25·(1 − c/5d)·(b + d)·d·√fcd` | CEB FIP 70 (tradução); Macedo §4.4 e §6.1.3 | Blocos flexíveis e > 6 estacas (comparativo) |
 | M7 | Bielas e tirantes 3D genérico por treliça (rigidez, energia mínima, cruzamento de bielas) | Gomes 2015 (UFRJ) cap. 4; van de Graaf 2006 | Layouts livres (fase posterior) |
-| M8 | Pilar fictício: `Aeq = ΣAi`, `Ieq = Σ(Ii + Ai·di²)`; retângulo equivalente por inércia | "Método do pilar fictício"; Macedo cap. 5 | Múltiplos pilares (fase posterior) |
+| M8 | Pilar fictício: `Aeq = ΣAi`, `Ieq = Σ(Ii + Ai·di²)`; retângulo equivalente por inércia | "Método do pilar fictício"; Macedo cap. 5 | Padrão para vários pilares (D10), por área equivalente; conferir com M7 |
 | M9 | Armadura de pele por efeito térmico | Araújo, "Armadura de pele para blocos" | Blocos de grande volume (alerta) |
 
 ## 4.1 Método padrão M5 — Santos/Stucchi (especificação; D6 aprovada)
@@ -193,6 +193,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D7 | Peso próprio do bloco = 5 % da força normal de cálculo de cada caso, no centro do bloco (NBR 6122:2019, 5.6 pede no mínimo 5 % da carga permanente; a normal de cálculo inclui variáveis, então fica a favor da segurança). Evita usar peso específico e γg, ainda não pinados | Aprovada (Rodrigo, 13/10/2026) |
 | D8 | `d′` (cabeça da estaca ao eixo do tirante) = cobrimento + φ/2 do tirante | Aprovada (Rodrigo, 13/10/2026) |
 | D9 | Bloco flexível: flexão nas seções S1 do CEB-70 com As pela NBR 6118 (17.2.2), cisalhamento 19.4.1 a d da face e punção no pilar 19.5 (C e C′), conforme §4.2; punção nas estacas de canto só alerta | Aprovada (Rodrigo, 13/10/2026) |
+| D10 | Vários pilares: pilar fictício de área equivalente (área = soma das áreas, lados na razão √(Sx/Sy) do grupo, na resultante das normais de cada caso), com verificação do nó de cada pilar real; o resultado deve ser confrontado com o modelo de treliça 3D (M7) quando ele for implementado | Aprovada (Rodrigo, 13/10/2026) |
 | D11 | Armadura de suspensão (22.7.4.1.3): sem método de cálculo na norma nem nas referências; o programa mantém o alerta e o item de área zero no resultado | Aprovada (Rodrigo, 13/10/2026) |
 
 ## 7. Ainda falta neste documento
