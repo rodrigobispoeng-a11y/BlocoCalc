@@ -60,7 +60,18 @@
 | Tirante | 22.3.3 | `As = FSd / fyd` | Pinada |
 | Pressão de contato (pilar–bloco, estaca–bloco) | 21.2.1 | `FRd = Ac0·fcd·√(Ac1/Ac0) ≤ 3,3·fcd·Ac0`; Ac1 homotética a Ac0, lados na razão ≤ 2 | Pinada |
 | Compressão diagonal no contorno C | 19.5.3.1 | `τSd ≤ τRd2 = 0,27·αv·fcd` (pode +20 % em pilar interno sob condições) | Pinada |
-| Punção (bloco flexível) | 19.5.2, 19.5.3.2/3 | Contornos C, C′, C″ | Pendente (detalhar na fase de flexíveis) |
+| Superfícies críticas de punção | 19.5.1 | C na face do pilar (compressão diagonal); C′ a 2d da face (tração diagonal); C″ só com armadura de punção | Pinada |
+| Tensão solicitante, pilar interno | 19.5.2.1 | `τSd = FSd/(u·d)`, `d = (dx + dy)/2`; `FSd` pode ser reduzida da força aplicada na face oposta dentro do contorno (no bloco: reações das estacas dentro de C′) | Pinada |
+| Tensão solicitante com momento | 19.5.2.2 | `τSd = FSd/(u·d) + K·MSd/(Wp·d)`; K pela Tab. 19.2 (C1/C2 = 0,5 / 1,0 / 2,0 / 3,0 → 0,45 / 0,60 / 0,70 / 0,80; circular 0,6); pilar retangular `Wp = C1²/2 + C1·C2 + 4·C2·d + 16·d² + 2π·d·C1` | Pinada (interpolação linear na Tab. 19.2 e extremos constantes: premissa nossa) |
+| Pilares de borda e de canto | 19.5.2.3, 19.5.2.4 | Perímetro reduzido u*; não usados no bloco enquanto C′ couber no bloco | Pinada (não implementada) |
+| Tração diagonal em C′ sem armadura | 19.5.3.2 | `τRd1 = 0,13·ke·(100·ρ·fck)^(1/3) + 0,10·σcp`; `ke = 1 + √(20/d) ≤ 2` (d em cm); `ρ = √(ρx·ρy) ≤ 0,02`, taxas na largura do pilar + 3d para cada lado; σcp = 0 no bloco | Pinada |
+| Armadura de punção | 19.5.3.3 | `sr ≤ 0,75d`; fywd ≤ 300 MPa (conectores) ou 250 MPa (estribos) | Pinada (não implementada) |
+| Cisalhamento em laje sem estribos | 19.4.1 | `VSd ≤ VRd1 = [τRd·k·(1,2 + 40ρ1) + 0,15σcp]·bw·d`, com VSd a d da face do apoio; `τRd = 0,25·fctd`, limitado ao valor de fck = 60 MPa; `ρ1 = As1/(bw·d) ≤ 0,02`; `k = 1,6 − d ≥ 1` (d em m), ou 1 se 50 % da armadura inferior não chega ao apoio | Pinada |
+| Flexão: hipóteses básicas | 17.2.2 e) | Retângulo de profundidade `λx` e tensão `αc·ηc·fcd`; λ = 0,8 (fck ≤ 50) ou 0,8 − (fck − 50)/400; αc = 0,85 (fck ≤ 50) ou 0,85·[1 − (fck − 50)/200]; ×0,9 se a largura diminuir para a borda comprimida | Pinada |
+| ηc | 8.2.10.1 | ηc = 1,0 (fck ≤ 40 MPa) ou (40/fck)^(1/3) | Pinada |
+| Dutilidade | 14.6.4.3 | `x/d ≤ 0,45` (fck ≤ 50 MPa) ou `≤ 0,35` (50 < fck ≤ 90) | Pinada |
+| Armadura mínima de tração | 17.3.5.2.1 e 19.3.3.2 | `Md,mín = 0,8·W0·fctk,sup`, taxa absoluta ≥ 0,15 %; a 19.3.3.2 aceita esse critério em lajes | Pinada |
+| Suspensão: mudança de edição | 22.7.4.1.3 | A edição 2014 usava espaçamento > 3φ; a 2023 usa > 3·h | Pinada |
 | fcd | 12.3.3 | `fcd = fck/γc` (t ≥ 28 d) | Pinada |
 | γc, γs | 12.4.1, Tab. 12.1 | Normais 1,4 / 1,15; especiais 1,2 / 1,15; excepcionais 1,2 / 1,0; γc × 1,1 em condições desfavoráveis | Pinada |
 | Ganchos | 9.4.2.3, Tab. 9.1 | Semicircular (ponta 2φ), 45° (4φ), reto (8φ); pinos de dobramento CA-50: 5φ (< 20 mm), 8φ (≥ 20 mm) | Pinada |
@@ -93,7 +104,7 @@
 | M5 | Santos/Stucchi (2013) — espraiamento a 45°, área ampliada, limites fcd1/fcd3 da NBR 6118 | Santos, Carvalho, Stucchi 2019; Macedo §6.1.4; planilha "Bloco sobre N estacas" | **Padrão** do motor |
 | M6 | CEB-FIP 70 — seções de referência S1 (0,15·ap da face), S2; `As = Md/(0,85·d·fyd)`; `Vd,lim = 0,25·(1 − c/5d)·(b + d)·d·√fcd` | CEB FIP 70 (tradução); Macedo §4.4 e §6.1.3 | Blocos flexíveis e > 6 estacas (comparativo) |
 | M7 | Bielas e tirantes 3D genérico por treliça (rigidez, energia mínima, cruzamento de bielas) | Gomes 2015 (UFRJ) cap. 4; van de Graaf 2006 | Layouts livres (fase posterior) |
-| M8 | Pilar fictício: `Aeq = ΣAi`, `Ieq = Σ(Ii + Ai·di²)`; retângulo equivalente por inércia | "Método do pilar fictício"; Macedo cap. 5 | Múltiplos pilares (fase posterior) |
+| M8 | Pilar fictício: `Aeq = ΣAi`, `Ieq = Σ(Ii + Ai·di²)`; retângulo equivalente por inércia | "Método do pilar fictício"; Macedo cap. 5 | Padrão para vários pilares (D10), por área equivalente; conferir com M7 |
 | M9 | Armadura de pele por efeito térmico | Araújo, "Armadura de pele para blocos" | Blocos de grande volume (alerta) |
 
 ## 4.1 Método padrão M5 — Santos/Stucchi (especificação; D6 aprovada)
@@ -130,6 +141,25 @@ a iteração não tem raiz e `y` fica indefinido. Opções:
 direção, coerente com D4) e de `d′` (proposta: cobrimento + φ/2 do tirante, medido da cabeça da
 estaca).
 
+## 4.2 Bloco flexível (especificação, D9 aprovada)
+
+A NBR 6118:2023 não dá método fechado para o bloco flexível: pede análise completa (22.7.2.2) e os
+requisitos de lajes e punção (22.7.4.2, Seções 19 e 20). A proposta combina as seções de
+referência do CEB-FIP 70 (Boletim 73, Apêndice 4, tradução de Macedo 2023) com as verificações da
+NBR 6118. Unidades N, mm, MPa.
+
+| Etapa | Regra | Fonte |
+|---|---|---|
+| Reações | Distribuição linear (M1), mesma do bloco rígido | CEB-70 §2 |
+| Altura útil | Barras em x na camada inferior: `dx = h − embutimento − (c + φ/2)`; `dy = dx − φ` | D8 estendida |
+| Seção de flexão S1 | Plano a `0,15·ap` para dentro da face do pilar, em cada lado e direção; largura = bloco inteiro; `d ≤ 1,5·` distância de S1 ao eixo da estaca mais afastada | CEB-70 §3.1 |
+| Momento em S1 | `Md = Σ Ri·(distância do eixo da estaca a S1)` das estacas do lado não cruzado pelo eixo do pilar; vale o maior dos dois lados | CEB-70 §3.2 |
+| Armadura | Retângulo da 17.2.2 e); `x/d` acima do limite da 14.6.4.3 é falha (sem armadura dupla); As ≥ As,mín da 17.3.5.2.1 | NBR 6118:2023 |
+| Armadura secundária | ≥ 20 % da principal em cada direção | CEB-70 §3.2 (1/5) |
+| Cisalhamento | `VSd` = reações das estacas além da face do pilar (estaca cortada pela face entra com parcela linear); a 19.4.1 toma VSd a `d` da face, e contar inteiras as estacas entre a face e essa seção fica a favor da segurança, sem a redução a/2d; `bw` = largura do bloco; `VSd ≤ VRd1` com `As1` = armadura da direção; acima disso é falha (estribos fora do escopo) | NBR 6118:2023, 19.4.1 |
+| Punção no pilar | Pilar interno com momento (19.5.2.2); C: `τSd ≤ τRd2` com `FSd` inteira; C′ a 2d: `τSd ≤ τRd1`, `FSd` menos as reações das estacas com eixo dentro de C′; se C′ sai do bloco, bloqueia com alerta | NBR 6118:2023, 19.5 |
+| Estacas de canto e de borda | Punção e cisalhamento local ficam como alerta até o MEF | CEB-70 §6.4; NBR 19.5.2.3/4 |
+
 ## 5. Benchmarks propostos
 
 Valores de referência serão **recalculados por nós** e conferidos contra a publicação. Diferenças
@@ -162,9 +192,12 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D6 | Profundidade `y` do nó CCC (Santos/Stucchi): equilíbrio horizontal do nó, com a compressão horizontal que equilibra os tirantes atuando sob fcd1 numa faixa de altura `y` (ver §4.1) | Aprovada (Rodrigo, 13/10/2026) |
 | D7 | Peso próprio do bloco = 5 % da força normal de cálculo de cada caso, no centro do bloco (NBR 6122:2019, 5.6 pede no mínimo 5 % da carga permanente; a normal de cálculo inclui variáveis, então fica a favor da segurança). Evita usar peso específico e γg, ainda não pinados | Aprovada (Rodrigo, 13/10/2026) |
 | D8 | `d′` (cabeça da estaca ao eixo do tirante) = cobrimento + φ/2 do tirante | Aprovada (Rodrigo, 13/10/2026) |
+| D9 | Bloco flexível: flexão nas seções S1 do CEB-70 com As pela NBR 6118 (17.2.2), cisalhamento 19.4.1 a d da face e punção no pilar 19.5 (C e C′), conforme §4.2; punção nas estacas de canto só alerta | Aprovada (Rodrigo, 13/10/2026) |
+| D10 | Vários pilares: pilar fictício de área equivalente (área = soma das áreas, lados na razão √(Sx/Sy) do grupo, na resultante das normais de cada caso), com verificação do nó de cada pilar real; o resultado deve ser confrontado com o modelo de treliça 3D (M7) quando ele for implementado | Aprovada (Rodrigo, 13/10/2026) |
+| D11 | Armadura de suspensão (22.7.4.1.3): sem método de cálculo na norma nem nas referências; o programa mantém o alerta e o item de área zero no resultado | Aprovada (Rodrigo, 13/10/2026) |
 
 ## 7. Ainda falta neste documento
 
 - Completar as linhas **Pendente** (fbd, fctm, cobrimento, combinações).
 - Fórmulas completas de M3–M5 para 2, 3 e 4 estacas, com unidades N, mm, MPa.
-- Punção e cisalhamento para blocos flexíveis (fase posterior).
+- Punção nas estacas de canto e de borda (perímetro reduzido) para blocos flexíveis.
