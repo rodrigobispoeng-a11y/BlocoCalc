@@ -1,0 +1,9 @@
+# Ambiente conda do BlocoCalc. Dependências de MEF/3D/UI entram quando cada fase começar.
+name: blococalc
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - -e .[dev]

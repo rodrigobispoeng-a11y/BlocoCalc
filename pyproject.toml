@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blococalc"
+version = "0.1.0"
+description = "Dimensionamento de blocos de coroamento sobre estacas (NBR 6118:2023)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.7,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov>=5", "hypothesis>=6.100", "mypy>=1.10", "ruff>=0.5"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/blococalc"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "golden: casos de referência com valores conferidos",
+    "benchmark: validação contra resultados publicados",
+]
+
+[tool.coverage.run]
+source = ["blococalc"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "PL"]
+ignore = ["PLR2004", "RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
