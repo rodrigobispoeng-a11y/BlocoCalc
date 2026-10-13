@@ -27,3 +27,19 @@ def two_pile_cap() -> GeometryInput:
         ),
         columns=(Column(id="P1", x=0.0, y=0.0, bx=400.0, by=400.0),),
     )
+
+
+def node_depth(d: float, width: float, k: float) -> float:
+    """Profundidade `y` do nó CCC por D6 com a face espraiada a 45° (D13), sem passar pelo código.
+
+    Resolve (b + 2y)·y·(d − y/2) = k por bissecção, com k = ΣR·lproj/fcd1 na direção e b a
+    largura da face do pilar que a compressão atravessa. O lado esquerdo cresce em [0, d].
+    """
+    low, high = 0.0, d
+    for _ in range(200):
+        mid = (low + high) / 2.0
+        if (width + 2.0 * mid) * mid * (d - mid / 2.0) < k:
+            low = mid
+        else:
+            high = mid
+    return (low + high) / 2.0

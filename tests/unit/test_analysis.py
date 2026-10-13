@@ -25,7 +25,7 @@ from blococalc.schemas import (
     ReinforcementKind,
 )
 from blococalc.standards.strength import strut_tie_strengths
-from tests.factories import four_pile_cap, two_pile_cap
+from tests.factories import four_pile_cap, node_depth, two_pile_cap
 
 C35 = MaterialsInput(fck=35.0)
 
@@ -43,11 +43,10 @@ def loads(*normals: float, self_weight: bool = True) -> LoadsInput:
 @pytest.mark.golden
 def test_b1_full_analysis() -> None:
     # Peso próprio D7: 5 % de 980 kN -> R = 1,05·245 = 257,25 kN; Rd = 1,2·R.
-    # d′ (D8) = 50 + 16/2 = 58 -> d = 1000 − 100 − 58 = 842; y pela forma fechada de D6.
+    # d′ (D8) = 50 + 16/2 = 58 -> d = 1000 − 100 − 58 = 842; y por D6 com a face de D13.
     result = analyze(four_pile_cap(), C35, loads(980e3))
     rd, d = 1.2 * 257.25e3, 842.0
-    k = 2.0 * rd * 437.5 / (strut_tie_strengths(C35).fcd1 * 200.0)
-    z = d - (d - math.sqrt(d * d - 2.0 * k)) / 2.0
+    z = d - node_depth(d, 200.0, 2.0 * rd * 437.5 / strut_tie_strengths(C35).fcd1) / 2.0
     fyd = 500.0 / 1.15
 
     assert result.rigid
