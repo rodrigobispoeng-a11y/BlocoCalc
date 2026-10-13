@@ -1,4 +1,4 @@
-"""Contratos de dados entre módulos (schemas v2, ADR-002).
+"""Contratos de dados entre módulos (schemas v3, ADR-002 e ADR-003).
 
 Unidades internas fixas: N, mm, MPa. Conversões acontecem só nas bordas (UI e importação).
 Estes modelos são o único formato que atravessa a fronteira entre subpacotes. Mudanças
@@ -12,8 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION: Literal["2"] = "2"
-_READABLE_VERSIONS = ("1", "2")
+SCHEMA_VERSION: Literal["3"] = "3"
+_READABLE_VERSIONS = ("1", "2", "3")
 
 
 class _Contract(BaseModel):
@@ -23,9 +23,9 @@ class _Contract(BaseModel):
 
 
 class _Versioned(_Contract):
-    """Contrato de topo. Lê a v1 (ADR-002: a v2 só acrescenta campos com valor padrão)."""
+    """Contrato de topo. Lê v1 e v2: as versões novas só acrescentam campos e valores."""
 
-    schema_version: Literal["2"] = SCHEMA_VERSION
+    schema_version: Literal["3"] = SCHEMA_VERSION
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -220,6 +220,7 @@ class ReinforcementKind(StrEnum):
     DISTRIBUTION = "distribution"
     SUSPENSION = "suspension"
     LATERAL_TOP = "lateral_top"
+    FLEXURE = "flexure"  # bloco flexível: malha inferior em toda a largura (ADR-003)
 
 
 class Reinforcement(_Contract):
