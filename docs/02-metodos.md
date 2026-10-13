@@ -156,7 +156,7 @@ NBR 6118. Unidades N, mm, MPa.
 | Momento em S1 | `Md = Σ Ri·(distância do eixo da estaca a S1)` das estacas do lado não cruzado pelo eixo do pilar; vale o maior dos dois lados | CEB-70 §3.2 |
 | Armadura | Retângulo da 17.2.2 e); `x/d` acima do limite da 14.6.4.3 é falha (sem armadura dupla); As ≥ As,mín da 17.3.5.2.1 | NBR 6118:2023 |
 | Armadura secundária | ≥ 20 % da principal em cada direção | CEB-70 §3.2 (1/5) |
-| Cisalhamento | Seção a `d` da face do pilar, `bw` = largura do bloco; estaca com eixo a menos de `φ/2` da seção entra com parcela linear; `VSd ≤ VRd1` (19.4.1), com `As1` = armadura da direção; acima disso é falha (estribos fora do escopo) | NBR 6118:2023, 19.4.1; parcela linear da ACI 318 |
+| Cisalhamento | `VSd` = reações das estacas além da face do pilar (estaca cortada pela face entra com parcela linear); a 19.4.1 toma VSd a `d` da face, e contar inteiras as estacas entre a face e essa seção fica a favor da segurança, sem a redução a/2d; `bw` = largura do bloco; `VSd ≤ VRd1` com `As1` = armadura da direção; acima disso é falha (estribos fora do escopo) | NBR 6118:2023, 19.4.1 |
 | Punção no pilar | Pilar interno com momento (19.5.2.2); C: `τSd ≤ τRd2` com `FSd` inteira; C′ a 2d: `τSd ≤ τRd1`, `FSd` menos as reações das estacas com eixo dentro de C′; se C′ sai do bloco, bloqueia com alerta | NBR 6118:2023, 19.5 |
 | Estacas de canto e de borda | Punção e cisalhamento local ficam como alerta até o MEF | CEB-70 §6.4; NBR 19.5.2.3/4 |
 
