@@ -1,8 +1,8 @@
 """Bielas, nós e tirantes pelo método de Santos/Stucchi (docs/02-metodos.md §4.1).
 
 Os valores de referência são recalculados aqui em forma fechada, sem passar pelo código:
-com a origem de cada biela no centroide da parte do pilar voltada para a estaca, a decisão D6
-dá y·(d − y/2) = k, com k = ΣH·z/(fcd1·b), logo y = d − √(d² − 2k).
+com a origem de cada biela no centroide da parte do pilar voltada para a estaca, as decisões D6 e
+D13 dão (b + 2y)·y·(d − y/2) = ΣR·lproj/fcd1 (ver `tests.factories.node_depth`).
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from blococalc.schemas import (
 )
 from blococalc.standards.strength import strut_tie_strengths
 from blococalc.standards.strut_tie_checks import strut_tie_checks
-from tests.factories import four_pile_cap, two_pile_cap
+from tests.factories import four_pile_cap, node_depth, two_pile_cap
 
 C35 = strut_tie_strengths(MaterialsInput(fck=35.0))
 GAMMA_N = 1.2
@@ -39,10 +39,6 @@ def solve(geometry: GeometryInput, n: float, **moments: float) -> StrutTieModel:
     return santos_stucchi(geometry, reactions, C35, GAMMA_N, TIE_HEIGHT)
 
 
-def node_depth(d: float, k: float) -> float:
-    return d - math.sqrt(d * d - 2.0 * k)
-
-
 def sin2(tan_theta: float) -> float:
     return tan_theta**2 / (1.0 + tan_theta**2)
 
@@ -50,10 +46,13 @@ def sin2(tan_theta: float) -> float:
 @pytest.mark.golden
 def test_b1_four_piles() -> None:
     # B1 (Macedo 2022, §6.1): Fd = 980 kN, Rd = 1,2·245 = 294 kN; d = 1000 − 100 − 50 = 850.
-    # Pilar 200×650: origens em (±50, ±162,5). Em y a compressão cruza a face de largura 200 e
-    # governa: k = 2·294e3·437,5/(18,275·200) contra 2·294e3·550/(18,275·650) em x.
+    # Pilar 200×650: origens em (±50, ±162,5). Em y a compressão cruza a face 200 + 2y e governa
+    # sobre a de x (650 + 2y). D13 trocou a face de 200 por 200 + 2y: y passou de 87,29 a 55,16 mm.
     rd, d = 294e3, 850.0
-    y = node_depth(d, 2.0 * rd * 437.5 / (C35.fcd1 * 200.0))
+    y = max(
+        node_depth(d, 200.0, 2.0 * rd * 437.5 / C35.fcd1),
+        node_depth(d, 650.0, 2.0 * rd * 550.0 / C35.fcd1),
+    )
     z = d - y / 2.0
     l_proj = math.hypot(550.0, 437.5)
     tan_t = z / l_proj
@@ -62,7 +61,7 @@ def test_b1_four_piles() -> None:
 
     assert model.d == pytest.approx(d)
     assert model.y == pytest.approx(y, rel=1e-6)
-    assert model.y == pytest.approx(87.29, abs=0.01)
+    assert model.y == pytest.approx(55.16, abs=0.01)
     assert model.z == pytest.approx(z, rel=1e-6)
     for strut in model.struts:
         assert strut.force_d == pytest.approx(rd)
@@ -82,7 +81,7 @@ def test_b1_four_piles() -> None:
 def test_two_piles() -> None:
     # Pilar 400×400 entre estacas a ±600: origens em ±100, lproj = 500, d = 900 − 100 − 50.
     rd, d = 600e3, 750.0
-    y = node_depth(d, rd * 500.0 / (C35.fcd1 * 400.0))
+    y = node_depth(d, 400.0, rd * 500.0 / C35.fcd1)
     z = d - y / 2.0
 
     model = solve(two_pile_cap(), 1000e3)
@@ -219,8 +218,8 @@ def test_b1_checks() -> None:
 
 
 def test_flat_strut_fails_angle_and_warns() -> None:
-    # h = 600: d = 450, y ≈ 201 mm, tg θ ≈ 0,50.
-    checks = {c.id: c for c in strut_tie_checks(solve(four_pile_cap(h=600.0), 980e3), C35)}
+    # h = 500: d = 350, y ≈ 113 mm (y/d ≈ 0,32), tg θ ≈ 0,42.
+    checks = {c.id: c for c in strut_tie_checks(solve(four_pile_cap(h=500.0), 980e3), C35)}
     assert checks["tg_theta_min_E1"].status is CheckStatus.FAIL
     assert checks["theta_45_E1"].status is CheckStatus.WARNING
     assert checks["tg_theta_max_E1"].status is CheckStatus.OK

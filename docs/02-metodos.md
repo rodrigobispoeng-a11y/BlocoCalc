@@ -131,8 +131,9 @@ a iteração não tem raiz e `y` fica indefinido. Opções:
 1. `y` pelo equilíbrio horizontal do nó CCC (analogia com a flexão, que os próprios autores
    citam): a compressão horizontal que equilibra os tirantes atua numa faixa de altura `y` sob
    tensão fcd1. Recomendado e aprovado (D6). Com as origens das bielas nos centroides das partes do
-   pilar voltadas para cada estaca e d′ = 50 mm, o B1 dá y = 87,3 mm, tg θ = 1,15 e tirantes de
-   200,5 kN (x) e 159,5 kN (y); ver `tests/unit/test_strut_tie.py`.
+   pilar voltadas para cada estaca e d′ = 50 mm, o B1 dá y = 55,2 mm, tg θ = 1,17 e tirantes de
+   196,6 kN (x) e 156,4 kN (y), com a face do nó espraiada a 45° (D13; antes 87,3 mm, 200,5 e
+   159,5 kN); ver `tests/unit/test_strut_tie.py`.
 2. `y = 0` (z = d): maior braço, menor armadura; contra a segurança.
 3. `y` por espraiamento a 45° como em Macedo (2022), y = 75 mm no B1: valor sem justificativa
    mecânica clara.

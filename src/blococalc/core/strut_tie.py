@@ -1,8 +1,8 @@
 """Modelo de bielas e tirantes de Santos/Stucchi para bloco rígido (método M5, padrão).
 
 Especificação: docs/02-metodos.md §4.1 (Santos, Carvalho e Stucchi, 2019, eq. 19 a 21), com as
-decisões D4 (pilar retangular com as dimensões reais) e D6 (profundidade `y` do nó CCC pelo
-equilíbrio horizontal do nó sob fcd1).
+decisões D4 (pilar retangular com as dimensões reais), D6 (profundidade `y` do nó CCC pelo
+equilíbrio horizontal do nó sob fcd1) e D13 (face do nó espraiada a 45°; grade de N estacas).
 
 Premissas do modelo, registradas na trilha de auditoria pelo chamador:
 - v1: um pilar, 2 a 4 estacas comprimidas, todas no contorno do estaqueamento;
@@ -173,16 +173,22 @@ def _strut_origins(column: Column, piles: Sequence[Pile]) -> list[tuple[float, f
 
 
 def _node_depth(horizontal: Sequence[tuple[float, float]], column: Column, fcd1: float) -> float:
-    """D6: y tal que a compressão horizontal do nó, em cada direção, atue sob fcd1.
+    """D6 e D13: y tal que a compressão horizontal do nó, em cada direção, atue sob fcd1.
 
     `horizontal` são as componentes em planta das bielas, H = R·lproj/z, em direção à estaca.
-    Em x, a compressão atravessa uma face de largura by; em y, de largura bx.
+    Em x, a compressão atravessa uma face de largura by + 2y; em y, de largura bx + 2y
+    (espraiamento a 45°, como a área ampliada da eq. 20). Para cada direção, C = fcd1·(b + 2y)·y
+    dá y = (−b + √(b² + 8C/fcd1))/4.
     """
     pos_x = sum(max(hx, 0.0) for hx, _ in horizontal)
     neg_x = sum(max(-hx, 0.0) for hx, _ in horizontal)
     pos_y = sum(max(hy, 0.0) for _, hy in horizontal)
     neg_y = sum(max(-hy, 0.0) for _, hy in horizontal)
-    return max(max(pos_x, neg_x) / (fcd1 * column.by), max(pos_y, neg_y) / (fcd1 * column.bx))
+
+    def depth(compression: float, width: float) -> float:
+        return (math.sqrt(width * width + 8.0 * compression / fcd1) - width) / 4.0
+
+    return max(depth(max(pos_x, neg_x), column.by), depth(max(pos_y, neg_y), column.bx))
 
 
 def _pile_spread_area(pile: Pile, tie_height: float) -> float:

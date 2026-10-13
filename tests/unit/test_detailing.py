@@ -38,7 +38,7 @@ def test_b1_detailing() -> None:
     # 20 % da soma das forças nos dois tirantes de cada direção.
     total_x = sum(t.force_d for t in model_ties if t.dir_y == 0.0)
     assert result.distribution_area_x == pytest.approx(0.2 * total_x / FYD)
-    assert result.distribution_area_x == pytest.approx(184.49, abs=0.01)
+    assert result.distribution_area_x == pytest.approx(180.89, abs=0.01)  # 184,49 antes da D13
     # Ancoragem: φ16 com gancho, ℓb,nec = 0,7·481,59 = 337,1 mm; disponível da face interna da
     # estaca (x = 400) até a face do bloco menos o cobrimento: 1000 − 50 − 400 = 550 mm.
     anchorage = [c for c in result.checks if c.id.startswith("ancoragem_")]
