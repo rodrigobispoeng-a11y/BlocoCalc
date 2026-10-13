@@ -2,7 +2,7 @@
 
 É a única camada que combina `core` e `standards`, que não se importam entre si. Sem I/O.
 
-Premissas provisórias (docs/02-metodos.md §6, registradas na trilha de auditoria):
+Premissas aprovadas (docs/02-metodos.md §6, registradas na trilha de auditoria):
 - D7: peso próprio do bloco = 5 % da força normal de cálculo do caso, no centro do bloco
   (NBR 6122:2019, 5.6, mínimo de 5 % da carga permanente; a favor da segurança porque a
   normal de cálculo inclui as variáveis);
@@ -49,8 +49,8 @@ _ASSUMPTIONS = (
     "Bloco rígido: reações lineares em planta, estacas de mesma rigidez (M1).",
     "Bielas e tirantes por Santos/Stucchi; y do nó CCC por equilíbrio horizontal (D2, D6).",
     "Pilar retangular tratado por direção com as dimensões reais (D4, provisória).",
-    "Peso próprio do bloco = 5 % da normal de cálculo de cada caso (D7, provisória).",
-    "Eixo do tirante a cobrimento + φ/2 acima da cabeça da estaca (D8, provisória).",
+    "Peso próprio do bloco = 5 % da normal de cálculo de cada caso (D7).",
+    "Eixo do tirante a cobrimento + φ/2 acima da cabeça da estaca (D8).",
     "Ancoragem com As,calc/As,ef = 1 enquanto as barras não são escolhidas.",
 )
 
