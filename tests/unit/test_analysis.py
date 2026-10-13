@@ -74,11 +74,55 @@ def test_envelope_keeps_the_largest_area_and_tags_checks_by_case() -> None:
     assert len(result.reactions) == 8
 
 
-def test_flexible_cap_is_blocked() -> None:
-    result = analyze(four_pile_cap(h=500.0), C35, loads(980e3))  # exige h ≥ 600
+def flexible_cap(h: float = 600.0) -> GeometryInput:
+    """3000×3000, estacas φ400 a ±1100, pilar 400×400: flexível para h < 867 (22.7.1)."""
+    piles = tuple(
+        Pile(id=f"E{i + 1}", x=sx * 1100.0, y=sy * 1100.0, size=400.0)
+        for i, (sx, sy) in enumerate(((-1, -1), (1, -1), (1, 1), (-1, 1)))
+    )
+    return GeometryInput(
+        cap=Cap(lx=3000.0, ly=3000.0, h=h, pile_embedment=100.0),
+        piles=piles,
+        columns=(Column(id="P1", x=0.0, y=0.0, bx=400.0, by=400.0),),
+    )
+
+
+@pytest.mark.golden
+def test_flexible_cap_by_d9() -> None:
+    # Md = 1,2·2·500·0,96 = 1152 kN·m por seção S1; dx = 600 − 100 − 58 = 442, dy = 426.
+    result = analyze(flexible_cap(), MaterialsInput(fck=30.0), loads(2000e3, self_weight=False))
     assert not result.rigid
-    assert result.reinforcement == ()
-    assert any("flexível" in w for w in result.warnings)
+    assert result.audit.method == "ceb70-nbr6118-flexao"
+    sigma = 0.85 * 30.0 / 1.4
+    areas = {}
+    for axis, d in (("x", 442.0), ("y", 426.0)):
+        y = d - math.sqrt(d * d - 2.0 * 1152e6 / (sigma * 3000.0))
+        areas[axis] = sigma * 3000.0 * y / (500.0 / 1.15)
+    bars = {r.id: r for r in result.reinforcement}
+    assert set(bars) == {"flexao_x", "flexao_y"}
+    assert bars["flexao_x"].kind is ReinforcementKind.FLEXURE
+    assert bars["flexao_x"].area_required == pytest.approx(areas["x"])
+    assert bars["flexao_x"].area_required == pytest.approx(6358.5, abs=0.1)
+    assert bars["flexao_y"].area_required == pytest.approx(areas["y"])
+
+    checks = {c.id: c for c in result.checks}
+    assert checks["C1:dutilidade_x+"].status is CheckStatus.OK
+    shear = checks["C1:cisalhamento_x+"]
+    assert shear.demand == pytest.approx(1.2e6)  # duas estacas além da face, com γn
+    assert shear.status is CheckStatus.FAIL  # VRd1 ≈ 773 kN: bloco fino pede estribos
+    assert checks["C1:puncao_C"].status is CheckStatus.OK
+    assert checks["C1:puncao_C1"].status is CheckStatus.FAIL
+    assert any("estacas de canto" in w for w in result.warnings)
+    assert result.warnings[0].startswith("Bloco flexível")
+
+
+def test_flexible_cap_with_c1_outside_the_cap() -> None:
+    # h = 850 < 867: d = 684, 2d = 1368; 200 + 1368 > 1500.
+    result = analyze(flexible_cap(h=850.0), MaterialsInput(fck=30.0), loads(2000e3))
+    ids = {c.id for c in result.checks}
+    assert "C1:puncao_C" in ids
+    assert "C1:puncao_C1" not in ids
+    assert any("C′" in w for w in result.warnings)
 
 
 def test_piles_in_line_flag_lateral_and_top_bars() -> None:
