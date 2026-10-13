@@ -16,7 +16,7 @@ from blococalc.schemas import (
 )
 from blococalc.standards.detailing import rigid_cap_detailing
 from blococalc.standards.strength import strut_tie_strengths
-from tests.factories import four_pile_cap, two_pile_cap
+from tests.factories import four_pile_cap, grid_cap, two_pile_cap
 
 C35 = MaterialsInput(fck=35.0)
 FYD = 500.0 / 1.15
@@ -80,3 +80,21 @@ def test_straight_bars_need_longer_anchorage_and_warn() -> None:
     anchorage = [c for c in result.checks if c.id.startswith("ancoragem_")]
     assert anchorage[0].demand == pytest.approx(481.59, abs=0.01)  # α = 1,0
     assert any("gancho" in w for w in result.warnings)
+
+
+def test_grid_rows_anchor_at_the_ends_and_size_the_mesh_by_the_worst_segment() -> None:
+    # B2 (D13): cada linha em x tem 3 trechos; a barra é contínua, com a armadura do trecho
+    # central, e só ancora sobre as estacas das pontas.
+    geometry = grid_cap(4, 2)
+    model_ties = ties(geometry, 15e6)
+    result = rigid_cap_detailing(geometry, model_ties, C35, PHI16, 50.0)
+
+    x_ties = [t for t in model_ties if t.dir_x != 0.0]
+    worst = max(t.force_d for t in x_ties)
+    assert worst > min(t.force_d for t in x_ties)
+    assert result.distribution_area_x == pytest.approx(0.2 * 2 * worst / FYD)
+    x_prefixes = tuple(f"ancoragem_{t.pile_a}_{t.pile_b}_" for t in x_ties)
+    anchored = {c.id.rsplit("_", 1)[1] for c in result.checks if c.id.startswith(x_prefixes)}
+    assert anchored == {"E1", "E4", "E5", "E8"}
+    anchors = [c for c in result.checks if c.id.startswith("ancoragem_")]
+    assert len(anchors) == 2 * 2 + 4 * 2  # pontas das 2 linhas em x e das 4 colunas em y

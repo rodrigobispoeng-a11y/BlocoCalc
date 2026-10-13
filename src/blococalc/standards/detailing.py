@@ -37,6 +37,7 @@ from blococalc.standards.anchorage import (
 BAND_WIDTH_FACTOR = 1.2  # 22.7.2.1 a)
 DISTRIBUTION_RATIO = 0.20  # 22.7.4.1.2
 SUSPENSION_SPACING_FACTOR = 3.0  # 22.7.4.1.3
+_PARALLEL_TOL = 1e-9
 
 _ANCHORAGE = Reference(source="NBR 6118:2023", item="22.7.4.1.1 / 9.4.2.5")
 _SUSPENSION = Reference(source="NBR 6118:2023", item="22.7.4.1.3")
@@ -81,8 +82,11 @@ def rigid_cap_detailing(
     piles = {pile.id: pile for pile in geometry.piles}
     bar_diameter = options.bar_diameter
     fyd = materials.fyk / materials.gamma_s
-    tension_x = sum(abs(t.force_d * t.dir_x) for t in ties)
-    tension_y = sum(abs(t.force_d * t.dir_y) for t in ties)
+    runs = _bar_runs(ties)
+    # Cada linha de barras (trechos alinhados de uma linha de estacas, D13) entra com o seu
+    # trecho mais carregado, que define a armadura da linha inteira.
+    tension_x = sum(max(abs(t.force_d * t.dir_x) for t in run) for run in runs)
+    tension_y = sum(max(abs(t.force_d * t.dir_y) for t in run) for run in runs)
 
     cap = geometry.cap
     depth = cap.h - cap.pile_embedment - tie_height
@@ -96,6 +100,8 @@ def rigid_cap_detailing(
     for tie in ties:
         a, b = piles[tie.pile_a], piles[tie.pile_b]
         for end, other in ((a, b), (b, a)):
+            if not _run_end(runs, tie, end.id):
+                continue  # estaca interna da linha: a barra passa direto
             available = _available_anchorage(geometry, end, other)
             checks.append(
                 Check(
@@ -144,6 +150,29 @@ def rigid_cap_detailing(
         checks=tuple(checks),
         warnings=tuple(warnings),
     )
+
+
+def _bar_runs(ties: Sequence[TieResult]) -> list[list[TieResult]]:
+    """Agrupa os trechos paralelos que se encadeiam por estacas comuns numa mesma linha."""
+    runs: list[list[TieResult]] = []
+    for tie in ties:
+        joined = [
+            run
+            for run in runs
+            if any(
+                {tie.pile_a, tie.pile_b} & {t.pile_a, t.pile_b}
+                and abs(tie.dir_x * t.dir_y - tie.dir_y * t.dir_x) < _PARALLEL_TOL
+                for t in run
+            )
+        ]
+        merged = [tie] + [t for run in joined for t in run]
+        runs = [run for run in runs if all(run is not j for j in joined)] + [merged]
+    return runs
+
+
+def _run_end(runs: Sequence[Sequence[TieResult]], tie: TieResult, pile_id: str) -> bool:
+    run = next(r for r in runs if any(t is tie for t in r))
+    return sum(pile_id in (t.pile_a, t.pile_b) for t in run) == 1
 
 
 def _available_anchorage(geometry: GeometryInput, end: Pile, other: Pile) -> float:

@@ -140,12 +140,12 @@ def test_rejects_pile_in_tension() -> None:
         solve(two_pile_cap(), 100e3, my=200e6)
 
 
-def test_rejects_more_than_four_piles() -> None:
+def test_rejects_five_piles_out_of_grid() -> None:
     base = four_pile_cap()
     geometry = base.model_copy(
         update={"piles": (*base.piles, Pile(id="E5", x=0.0, y=0.0, size=400.0))}
     )
-    with pytest.raises(UnsupportedLayoutError, match="2, 3 ou 4"):
+    with pytest.raises(UnsupportedLayoutError, match="grade retangular completa"):
         solve(geometry, 980e3)
 
 
