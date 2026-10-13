@@ -94,6 +94,38 @@
 | M8 | Pilar fictício: `Aeq = ΣAi`, `Ieq = Σ(Ii + Ai·di²)`; retângulo equivalente por inércia | "Método do pilar fictício"; Macedo cap. 5 | Múltiplos pilares (fase posterior) |
 | M9 | Armadura de pele por efeito térmico | Araújo, "Armadura de pele para blocos" | Blocos de grande volume (alerta) |
 
+## 4.1 Método padrão M5 — Santos/Stucchi (especificação; D6 aprovada)
+
+Fonte: Santos, Carvalho e Stucchi (2019), §3.4, eq. (19) a (21) e Figuras 8 a 10.
+
+| Grandeza | Expressão | Observação |
+|---|---|---|
+| Esforço de cálculo | `Nd = γn · Fd` (γn = 1,2, D3) | `Fd` já majorado por γf |
+| Braço de alavanca | `z = d − 0,5·y` | `y` = profundidade do nó CCC sob o pilar |
+| Inclinação da biela | `tg θ = z / Lproj` | `Lproj` = projeção horizontal da biela até o eixo da estaca |
+| Área ampliada no pilar | `Ac,sp = (ac + 2y)·(bc + 2y)` | espraiamento a 45° (Fig. 8) |
+| Tensão no nó do pilar (CCC) | `σcd,c = Nd / (Ac,sp · sen²θ) ≤ fcd1` | eq. (20); NBR 6118:2023, 22.3.2 |
+| Área ampliada na estaca | `Ap,sp = π·(φ + 2d′)²/4` (circular) ou `(a + 2d′)²` (quadrada) | `d′` = distância da cabeça da estaca ao eixo do tirante |
+| Tensão no nó da estaca (CCT) | `σcd,p = Rd / (Ap,sp · sen²θ) ≤ fcd3` | eq. (19); NBR 6118:2023, 22.3.2 |
+| Ductilidade | `y/d ≤ 0,3` | recomendação dos autores (§3.5) |
+| Tirante | `Ftd = Rd · cotg θ` na direção da biela, decomposto nas faixas sobre as estacas; `As = Ftd/fyd` | NBR 6118:2023, 22.3.3 e 22.7.4.1.1 |
+| Inclinação | `0,57 ≤ tg θ ≤ 2`; autores recomendam θ ≥ 45° | NBR 6118:2023, 22.3.1 |
+
+**Lacuna encontrada (decisão D6).** O procedimento manda iterar `y` até `σcd,c = fcd1`. No B1
+(Nd = 1176 kN, pilar 20×65, C35), `σcd,c` já é 15,8 MPa com `y = 0`, abaixo de fcd1 = 18,27 MPa:
+a iteração não tem raiz e `y` fica indefinido. Opções:
+
+1. `y` pelo equilíbrio horizontal do nó CCC (analogia com a flexão, que os próprios autores
+   citam): a compressão horizontal que equilibra os tirantes atua numa faixa de altura `y` sob
+   tensão fcd1. No B1 dá y = 31 mm, θ = 48,7°, Ftd = 258,5 kN por diagonal. Recomendado.
+2. `y = 0` (z = d): maior braço, menor armadura; contra a segurança.
+3. `y` por espraiamento a 45° como em Macedo (2022), y = 75 mm no B1: valor sem justificativa
+   mecânica clara.
+
+**Outras lacunas a pinar junto:** definição de `Lproj` para pilar retangular (proposta: por
+direção, coerente com D4) e de `d′` (proposta: cobrimento + φ/2 do tirante, medido da cabeça da
+estaca).
+
 ## 5. Benchmarks propostos
 
 Valores de referência serão **recalculados por nós** e conferidos contra a publicação. Diferenças
@@ -123,6 +155,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D3 | γn = 1,2 padrão para blocos, editável com registro na trilha de auditoria | Aprovada (Rodrigo, 13/10/2026) |
 | D4 | Pilar retangular nos modelos de bielas: o modelo é montado por direção, usando a dimensão do pilar naquela direção (ap em x, bp em y); nunca o lado menor para as duas | Padrão provisório (Claude); revisar |
 | D5 | `a` no critério `h ≥ (a − ap)/3`: dimensão do bloco na direção considerada (analogia literal com a sapata, e mais conservadora que usar a distância entre eixos) | Padrão provisório (Claude); revisar |
+| D6 | Profundidade `y` do nó CCC (Santos/Stucchi): equilíbrio horizontal do nó, com a compressão horizontal que equilibra os tirantes atuando sob fcd1 numa faixa de altura `y` (ver §4.1) | Aprovada (Rodrigo, 13/10/2026) |
 
 ## 7. Ainda falta neste documento
 
