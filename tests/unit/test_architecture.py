@@ -31,3 +31,11 @@ def test_pure_subpackages_do_not_import_edge_layers(subpackage: str) -> None:
             assert not module.startswith(FORBIDDEN + FORBIDDEN_THIRD_PARTY), (
                 f"{path.relative_to(PACKAGE)} importa {module}"
             )
+
+
+@pytest.mark.parametrize("subpackage", PURE)
+def test_pure_subpackages_only_share_schemas(subpackage: str) -> None:
+    others = tuple(f"blococalc.{name}" for name in PURE if name != subpackage)
+    for path in (PACKAGE / subpackage).rglob("*.py"):
+        for module in imported_modules(path):
+            assert not module.startswith(others), f"{path.relative_to(PACKAGE)} importa {module}"
