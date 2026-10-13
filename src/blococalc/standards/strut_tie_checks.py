@@ -6,6 +6,7 @@ As recomendações dos autores (y/d ≤ 0,3 e θ ≥ 45°) são alertas, não re
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from typing import Protocol
 
@@ -55,13 +56,16 @@ def strut_tie_checks(model: StrutTieResult, strengths: StrutTieStrengths) -> tup
     for strut in model.struts:
         tag, tan_t = strut.pile_id, strut.tan_theta
         sc, sp = strut.sigma_column_node, strut.sigma_pile_node
+        if not math.isinf(tan_t):  # biela vertical (estaca sob o pilar, D13): sem inclinação
+            rows += [
+                (f"tg_theta_min_{tag}", f"Biela {tag}: tg θ ≥ 0,57",
+                 TAN_THETA_MIN, tan_t, "-", _ANGLE, CheckStatus.FAIL),
+                (f"tg_theta_max_{tag}", f"Biela {tag}: tg θ ≤ 2",
+                 tan_t, TAN_THETA_MAX, "-", _ANGLE, CheckStatus.FAIL),
+                (f"theta_45_{tag}", f"Biela {tag}: θ ≥ 45° (recomendação)",
+                 TAN_THETA_RECOMMENDED, tan_t, "-", _AUTHORS, CheckStatus.WARNING),
+            ]  # fmt: skip
         rows += [
-            (f"tg_theta_min_{tag}", f"Biela {tag}: tg θ ≥ 0,57",
-             TAN_THETA_MIN, tan_t, "-", _ANGLE, CheckStatus.FAIL),
-            (f"tg_theta_max_{tag}", f"Biela {tag}: tg θ ≤ 2",
-             tan_t, TAN_THETA_MAX, "-", _ANGLE, CheckStatus.FAIL),
-            (f"theta_45_{tag}", f"Biela {tag}: θ ≥ 45° (recomendação)",
-             TAN_THETA_RECOMMENDED, tan_t, "-", _AUTHORS, CheckStatus.WARNING),
             (f"no_pilar_{tag}", f"Nó CCC sob o pilar, biela {tag}: σcd,c ≤ fcd1",
              sc, strengths.fcd1, "MPa", _NODES, CheckStatus.FAIL),
             (f"no_estaca_{tag}", f"Nó CCT sobre a estaca {tag}: σcd,p ≤ fcd3",

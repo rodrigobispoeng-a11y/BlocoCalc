@@ -43,3 +43,33 @@ def node_depth(d: float, width: float, k: float) -> float:
         else:
             high = mid
     return (low + high) / 2.0
+
+
+def grid_cap(
+    nx: int, ny: int, spacing: float = 1500.0, column: tuple[float, float] = (2090.0, 300.0)
+) -> GeometryInput:
+    """Estacas φ600 em grade nx × ny centrada na origem, bloco com 450 mm de borda (D13).
+
+    Com nx = 4, ny = 2 e os padrões, é o B2 (planilha "Bloco Sobre N estacas"): bloco 540×240×140
+    cm, pilar 209×30, espaçamento de 150 cm deduzido da planilha (2,5φ).
+    """
+    piles = tuple(
+        Pile(
+            id=f"E{j * nx + i + 1}",
+            x=(i - (nx - 1) / 2.0) * spacing,
+            y=(j - (ny - 1) / 2.0) * spacing,
+            size=600.0,
+        )
+        for j in range(ny)
+        for i in range(nx)
+    )
+    return GeometryInput(
+        cap=Cap(
+            lx=(nx - 1) * spacing + 900.0,
+            ly=(ny - 1) * spacing + 900.0,
+            h=1400.0,
+            pile_embedment=100.0,
+        ),
+        piles=piles,
+        columns=(Column(id="P1", x=0.0, y=0.0, bx=column[0], by=column[1]),),
+    )
