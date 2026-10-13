@@ -207,7 +207,7 @@ impresso ser o construtivo, a proposta inclui um desempate: tirantes fora das di
 **Dependências novas:** `numpy` e `scipy` (programa linear `linprog`, método HiGHS), a registrar no
 `pyproject.toml`. Ambos têm wheels para Windows e serão necessários também na fase do MEF.
 
-## 4.4 M5 para N estacas (especificação, D13 proposta)
+## 4.4 M5 para N estacas (especificação, D13 aprovada)
 
 Objetivo: levar o M5 (e com ele o pilar fictício, D10, e o confronto com o M7, D12) a blocos com 5
 ou mais estacas. Fonte: planilha "Bloco Sobre N estacas" (Mathcad, Macedo), que é o B2: bloco
@@ -233,18 +233,18 @@ armadura mínima. A profundidade comprimida `x` sai da tensão vertical sob o pi
 - Com D6 como está (compressão horizontal atravessando uma face da largura do pilar), o B2 não tem
   solução: o pilar-parede de 30 cm não equilibra a compressão em x e `y` passa de `d`.
 
-**Especificação proposta (D13).**
+**Especificação (D13).**
 
 | Etapa | Regra | Fonte |
 |---|---|---|
 | Escopo | Estacas em grade retangular completa, nx × ny (nx, ny ≥ 1, nx·ny ≥ 5), todas comprimidas, um pilar (vários pilares pelo pilar fictício, D10). 2 a 4 estacas seguem a §4.1. Outros arranjos (5 em quincôncio, hexágono) continuam bloqueados com aviso | planilha N estacas |
 | Origem das bielas | Pilar dividido em nx × ny partes iguais; a biela de cada estaca sai do centroide da parte de mesma linha e coluna. Para 2×2 dá os quadrantes da §4.1. Estaca sob o centroide da sua parte vira biela vertical: sem tirante e sem limite de inclinação, com o nó verificado com sen²θ = 1 | D6; planilha N estacas |
-| Profundidade `y` | Equilíbrio horizontal do nó (D6), com a face espraiada a 45°: largura `by + 2y` para a compressão em x e `bx + 2y` em y, coerente com a área ampliada `(ac + 2y)(bc + 2y)` da eq. (20). Ver opções abaixo | D6 (revisão) |
+| Profundidade `y` | Equilíbrio horizontal do nó (D6), com a face espraiada a 45°: largura `by + 2y` para a compressão em x e `bx + 2y` em y, coerente com a área ampliada `(ac + 2y)(bc + 2y)` da eq. (20). Vale para todos os blocos, inclusive 2 a 4 estacas (opção 1 abaixo) | D6 (revisão pela D13) |
 | Tirantes | Um tirante por linha de estacas em x e por coluna em y, com trechos entre estacas vizinhas. Força em cada trecho por equilíbrio dos nós: a maior entre a soma das componentes horizontais das estacas de um lado e a do outro. `As = Ftd/fyd` por trecho, faixa sobre as estacas | NBR 6118:2023, 22.3.3 e 22.7.4.1.1 |
 | Demais verificações | Iguais às da §4.1 (fcd1, fcd3, `0,57 ≤ tg θ ≤ 2`, `y/d ≤ 0,3`), por estaca | NBR 6118:2023, 22.3.1 e 22.3.2 |
 | Validação | B2 recalculado (abaixo); M7 com um nó por parte do pilar reproduz a soma das trações em cada direção; propriedade de equilíbrio e simetria em grades 2×3, 3×3 e 4×4 | B2, B5 |
 
-**Opções para a face do nó (decisão do Rodrigo).**
+**Opções para a face do nó.** O Rodrigo escolheu a opção 1 em 13/10/2026.
 
 | Opção | Regra | B1 (4 estacas, aprovado) | B2 |
 |---|---|---|---|
@@ -296,14 +296,14 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D3 | γn = 1,2 padrão para blocos, editável com registro na trilha de auditoria | Aprovada (Rodrigo, 13/10/2026) |
 | D4 | Pilar retangular nos modelos de bielas: o modelo é montado por direção, usando a dimensão do pilar naquela direção (ap em x, bp em y); nunca o lado menor para as duas | Padrão provisório (Claude); revisar |
 | D5 | `a` no critério `h ≥ (a − ap)/3`: dimensão do bloco na direção considerada (analogia literal com a sapata, e mais conservadora que usar a distância entre eixos) | Padrão provisório (Claude); revisar |
-| D6 | Profundidade `y` do nó CCC (Santos/Stucchi): equilíbrio horizontal do nó, com a compressão horizontal que equilibra os tirantes atuando sob fcd1 numa faixa de altura `y` (ver §4.1) | Aprovada (Rodrigo, 13/10/2026) |
+| D6 | Profundidade `y` do nó CCC (Santos/Stucchi): equilíbrio horizontal do nó, com a compressão horizontal que equilibra os tirantes atuando sob fcd1 numa faixa de altura `y` (ver §4.1); face espraiada a 45° pela D13 (§4.4) | Aprovada (Rodrigo, 13/10/2026) |
 | D7 | Peso próprio do bloco = 5 % da força normal de cálculo de cada caso, no centro do bloco (NBR 6122:2019, 5.6 pede no mínimo 5 % da carga permanente; a normal de cálculo inclui variáveis, então fica a favor da segurança). Evita usar peso específico e γg, ainda não pinados | Aprovada (Rodrigo, 13/10/2026) |
 | D8 | `d′` (cabeça da estaca ao eixo do tirante) = cobrimento + φ/2 do tirante | Aprovada (Rodrigo, 13/10/2026) |
 | D9 | Bloco flexível: flexão nas seções S1 do CEB-70 com As pela NBR 6118 (17.2.2), cisalhamento 19.4.1 a d da face e punção no pilar 19.5 (C e C′), conforme §4.2; punção nas estacas de canto só alerta | Aprovada (Rodrigo, 13/10/2026) |
 | D10 | Vários pilares: pilar fictício de área equivalente (área = soma das áreas, lados na razão √(Sx/Sy) do grupo, na resultante das normais de cada caso), com verificação do nó de cada pilar real; o resultado deve ser confrontado com o modelo de treliça 3D (M7) quando ele for implementado | Aprovada (Rodrigo, 13/10/2026) |
 | D11 | Armadura de suspensão (22.7.4.1.3): sem método de cálculo na norma nem nas referências; o programa mantém o alerta e o item de área zero no resultado | Aprovada (Rodrigo, 13/10/2026) |
 | D12 | Treliça 3D (M7) para confrontar D10: ótimo de `Σ Ft·lt` (Gomes eq. 3.7) por programa linear sobre todas as ligações, com planos e reações iguais aos do M5, verificações de cruzamento e inclinação depois do ótimo, e alerta quando o pilar fictício dá menos tração que o M7; adiciona numpy e scipy (§4.3) | Aprovada (Rodrigo, 13/10/2026) |
-| D13 | M5 para N estacas em grade retangular: pilar dividido em nx × ny partes, tirantes por linha e coluna com força por equilíbrio dos nós, face do nó D6 espraiada a 45° (§4.4) | Proposta (Claude); aguarda Rodrigo |
+| D13 | M5 para N estacas em grade retangular: pilar dividido em nx × ny partes, tirantes por linha e coluna com força por equilíbrio dos nós, face do nó D6 espraiada a 45° em todos os blocos (§4.4) | Aprovada (Rodrigo, 13/10/2026) |
 
 ## 7. Ainda falta neste documento
 
