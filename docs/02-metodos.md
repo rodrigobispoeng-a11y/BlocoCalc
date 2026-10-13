@@ -48,6 +48,7 @@
 | Comportamento do bloco rígido | 22.7.2.1 | Tração concentrada em faixas sobre as estacas de largura 1,2·φ; transmissão por bielas; ruína por compressão das bielas, não por tração diagonal | Pinada |
 | Bloco flexível | 22.7.2.2, 22.7.4.2 | Análise completa (reações, tirantes, cisalhamento, punção); requisitos de lajes (Seções 19 e 20) | Pinada |
 | Modelos aceitos | 22.7.3 | Modelos 3D lineares/não lineares e biela-tirante 3D; fendilhamento no contato pilar–bloco conforme 21.2; interação solo-estrutura se houver força horizontal significativa ou forte assimetria | Pinada |
+| Faixas sobre as estacas | 22.7.2.1 a) | Trações concentradas nas linhas sobre as estacas, em faixas de largura 1,2·φ da estaca | Pinada |
 | Armadura de flexão (tirantes) | 22.7.4.1.1 | > 85 % nas faixas sobre as estacas; barras de face a face com gancho; ancoragem medida a partir da face interna da estaca; estaca tracionada ancorada no topo do bloco (Fig. 22.7) | Pinada |
 | Armadura de distribuição | 22.7.4.1.2 | Malha positiva adicional nas duas direções = 20 % do total das forças de tração em cada direção | Pinada |
 | Armadura de suspensão | 22.7.4.1.3 | Obrigatória se a distribuição passar de 25 % dos esforços totais ou se espaçamento entre estacas > 3·h | Pinada |
@@ -65,9 +66,10 @@
 | Ganchos | 9.4.2.3, Tab. 9.1 | Semicircular (ponta 2φ), 45° (4φ), reto (8φ); pinos de dobramento CA-50: 5φ (< 20 mm), 8φ (≥ 20 mm) | Pinada |
 | Ancoragem básica | 9.4.2.4 | `ℓb = (φ/4)·(fyd/fbd) ≥ 25φ` | Pinada |
 | Ancoragem necessária | 9.4.2.5 | `ℓb,nec = α·ℓb·As,calc/As,ef ≥ ℓb,min`; α = 1,0 sem gancho, 0,7 com gancho e cobrimento ≥ 3φ; ℓb,min = máx(0,3ℓb; 10φ; 100 mm) | Pinada |
-| fbd | 9.3.2.1 | `fbd = η1·η2·η3·fctd` | Pendente (copiar η da norma na revisão) |
-| fctm, fctk | 8.2.5 | Resistência à tração | Pendente |
-| Cobrimento | 7.4.7, Tab. 7.2 | Por classe de agressividade | Pendente |
+| fbd | 9.3.2.1, Tab. 8.2 | `fbd = η1·η2·η3·fctd`, `fctd = fctk,inf/γc`; η1 = 2,25 (CA-50), 1,0 (CA-25, CA-60); η2 = 1,0 boa aderência, 0,7 má; η3 = 1,0 (φ < 32 mm), (132 − φ)/100 (φ ≥ 32 mm) | Pinada |
+| Situação de aderência | 9.3.1 | Boa: barra inclinada > 45°, ou horizontal com h < 60 cm e até 30 cm acima da face inferior, ou h ≥ 60 cm e pelo menos 30 cm abaixo da face superior | Pinada |
+| fctm, fctk | 8.2.5 | `fctm = 0,3·fck^(2/3)` (fck ≤ 50 MPa); `fctm = 2,12·ln[1 + 0,1·(fck + 8)]` (fck > 50 MPa; a edição 2014 trazia 0,11·fck); `fctk,inf = 0,7·fctm`; `fctk,sup = 1,3·fctm` | Pinada |
+| Cobrimento | 7.4.7, Tab. 7.2 | `cnom = cmín + Δc`, Δc = 10 mm (5 mm com controle rigoroso explicitado em projeto); elementos em contato com o solo: cnom = 30 mm (CAA I e II), 40 mm (III), 50 mm (IV); cnom ≥ φ da barra; pode reduzir 5 mm com concreto acima da classe mínima. NBR 6122:2019, 8.6.2 remete à 6118 | Pinada |
 | Combinações | 11.8.2 (6118) + NBR 8681:2025 §5.1.4 | γf, ψ0 | Pendente |
 
 ## 3. Mapa de cláusulas (NBR 6122:2019, Em1:2022)
