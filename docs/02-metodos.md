@@ -160,7 +160,7 @@ NBR 6118. Unidades N, mm, MPa.
 | Punção no pilar | Pilar interno com momento (19.5.2.2); C: `τSd ≤ τRd2` com `FSd` inteira; C′ a 2d: `τSd ≤ τRd1`, `FSd` menos as reações das estacas com eixo dentro de C′; se C′ sai do bloco, bloqueia com alerta | NBR 6118:2023, 19.5 |
 | Estacas de canto e de borda | Punção e cisalhamento local ficam como alerta até o MEF | CEB-70 §6.4; NBR 19.5.2.3/4 |
 
-## 4.3 Treliça 3D M7 (especificação proposta, D12 em análise)
+## 4.3 Treliça 3D M7 (especificação, D12 aprovada)
 
 Objetivo (D10): confrontar o pilar fictício com um modelo espacial de bielas e tirantes que
 enxerga cada pilar real. Fonte: Gomes (2015), "Análise tridimensional automática de blocos de
@@ -181,7 +181,7 @@ menor energia de deformação, `mín Σ Ft·lt` (eq. 3.7).
   13 milhões para 2 pilares e 6 estacas. Não serve para o B6 (16 estacas, 3 pilares), que é
   justamente o caso que D10 precisa confrontar.
 
-**Proposta (D12).**
+**Especificação (D12).**
 
 | Etapa | Regra | Fonte |
 |---|---|---|
@@ -241,7 +241,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D9 | Bloco flexível: flexão nas seções S1 do CEB-70 com As pela NBR 6118 (17.2.2), cisalhamento 19.4.1 a d da face e punção no pilar 19.5 (C e C′), conforme §4.2; punção nas estacas de canto só alerta | Aprovada (Rodrigo, 13/10/2026) |
 | D10 | Vários pilares: pilar fictício de área equivalente (área = soma das áreas, lados na razão √(Sx/Sy) do grupo, na resultante das normais de cada caso), com verificação do nó de cada pilar real; o resultado deve ser confrontado com o modelo de treliça 3D (M7) quando ele for implementado | Aprovada (Rodrigo, 13/10/2026) |
 | D11 | Armadura de suspensão (22.7.4.1.3): sem método de cálculo na norma nem nas referências; o programa mantém o alerta e o item de área zero no resultado | Aprovada (Rodrigo, 13/10/2026) |
-| D12 | Treliça 3D (M7) para confrontar D10: ótimo de `Σ Ft·lt` (Gomes eq. 3.7) por programa linear sobre todas as ligações, com planos e reações iguais aos do M5, verificações de cruzamento e inclinação depois do ótimo, e alerta quando o pilar fictício dá menos tração que o M7; adiciona numpy e scipy (§4.3) | Proposta (Claude); aguarda Rodrigo |
+| D12 | Treliça 3D (M7) para confrontar D10: ótimo de `Σ Ft·lt` (Gomes eq. 3.7) por programa linear sobre todas as ligações, com planos e reações iguais aos do M5, verificações de cruzamento e inclinação depois do ótimo, e alerta quando o pilar fictício dá menos tração que o M7; adiciona numpy e scipy (§4.3) | Aprovada (Rodrigo, 13/10/2026) |
 
 ## 7. Ainda falta neste documento
 
