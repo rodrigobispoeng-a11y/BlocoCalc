@@ -1,4 +1,4 @@
-# Ambiente conda do BlocoCalc. Dependências de MEF/3D/UI entram quando cada fase começar.
+# Ambiente conda do BlocoCalc. O CalculiX (ccx) é externo: PATH ou BLOCOCALC_CCX (D14).
 name: blococalc
 channels:
   - conda-forge
@@ -6,4 +6,4 @@ dependencies:
   - python=3.11
   - pip
   - pip:
-      - -e .[dev,app]
+      - -e .[dev,app,fem]

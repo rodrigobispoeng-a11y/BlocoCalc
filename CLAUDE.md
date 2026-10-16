@@ -22,7 +22,7 @@ src/blococalc/
 ├── core/          # motor analítico — funções puras, ZERO I/O
 ├── standards/     # verificações NBR — funções puras
 ├── geometry/      # geometria paramétrica + pilar fictício — funções puras
-├── fem/           # adapters gmsh/ccx (fase posterior)
+├── fem/           # adapters gmsh/ccx (D14)
 ├── viz/           # cenas PyVista/VTK (fase posterior)
 ├── persistence/   # projetos e resultados (fase posterior)
 └── app/           # PySide6: única camada que conhece Qt (python -m blococalc.app)
@@ -38,7 +38,7 @@ Regras de dependência (verificadas em `tests/unit/test_architecture.py`):
 ## 3. Comandos
 
 ```bash
-python -m pip install -e ".[dev,app]"   # ou: make setup (conda)
+python -m pip install -e ".[dev,app,fem]"   # ou: make setup (conda)
 make test        # pytest com cobertura
 make lint        # ruff check + ruff format --check
 make typecheck   # mypy --strict
