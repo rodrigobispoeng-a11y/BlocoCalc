@@ -1,22 +1,29 @@
 """Primeira tela: entrada de um bloco com pilares, estacas e casos de carga em tabelas.
 
 Conversões de unidade só aqui (CLAUDE.md §4): a tela usa kN e kN·m; o motor, N e N·mm.
-A tela só conhece `blococalc.analysis` e `blococalc.schemas`.
+A tela só conhece `blococalc.analysis`, `blococalc.persistence` e `blococalc.schemas`.
+O menu Arquivo grava e abre projetos `.bloco` (ADR-004).
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -27,7 +34,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from blococalc.analysis import analyze
+from blococalc.analysis import analyze, refresh_project
+from blococalc.persistence.project import EXTENSION, ProjectFileError, load_project, save_project
 from blococalc.schemas import (
     AggressivenessClass,
     AnalysisResult,
@@ -40,6 +48,7 @@ from blococalc.schemas import (
     LoadsInput,
     MaterialsInput,
     Pile,
+    Project,
 )
 
 KN = 1e3  # N
@@ -51,6 +60,8 @@ _DEFAULT_PILES = (("E1", -600.0, -600.0), ("E2", 600.0, -600.0), ("E3", 600.0, 6
 _PILE_HEADERS = ("Estaca", "x [mm]", "y [mm]", "φ [mm]")
 _COLUMN_HEADERS = ("Pilar", "x [mm]", "y [mm]", "bx [mm]", "by [mm]")
 _LOAD_HEADERS = ("Caso", "Pilar", "Nd [kN]", "Mxd [kN·m]", "Myd [kN·m]", "Hxd [kN]", "Hyd [kN]")
+_NEW_NAME = "Novo projeto"
+_FILTER = f"Projetos BlocoCalc (*{EXTENSION})"
 
 
 def _spin(value: float, maximum: float, decimals: int = 1, minimum: float = 0.0) -> QDoubleSpinBox:
@@ -91,8 +102,14 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("BlocoCalc — bloco sobre estacas (NBR 6118:2023)")
         self.result: AnalysisResult | None = None
+        self.fem_result: AnalysisResult | None = None
+        self.path: Path | None = None
+        self.modified = False
+        self._loading = False
+        self.name = QLineEdit(_NEW_NAME)
+        self.notes = QPlainTextEdit()
+        self.notes.setMaximumHeight(80)
 
         self.cap = {
             "lx": _spin(2000.0, 20000.0),
@@ -120,9 +137,18 @@ class MainWindow(QMainWindow):
         self.calculate_button = QPushButton("Calcular")
         self.calculate_button.clicked.connect(self.calculate)
         self._build_layout()
+        self._build_menu()
+        self._watch_changes()
+        self._blank = self.project()
+        self._update_title()
 
     def _build_layout(self) -> None:
         form = QVBoxLayout()
+        project = QGroupBox("Projeto")
+        project_layout = QFormLayout(project)
+        project_layout.addRow("Nome", self.name)
+        project_layout.addRow("Observações", self.notes)
+        form.addWidget(project)
         groups = (
             ("Bloco [mm]", self.cap, ("Lx", "Ly", "h", "Embutimento da estaca", "Cobrimento")),
             ("Materiais [MPa]", self.materials, ("fck", "fyk")),
@@ -240,8 +266,17 @@ class MainWindow(QMainWindow):
             self.result = None
             self.status.setText(f"Não foi possível calcular: {error}")
             return
-        result = self.result
-        self.status.setText(result.disclaimer)
+        self._mark_modified()
+        self._show(self.result)
+        self.status.setText(self.result.disclaimer)
+
+    def _show(self, result: AnalysisResult | None) -> None:
+        if result is None:
+            self.summary.clear()
+            for table in (self.reactions_table, self.checks_table, self.reinforcement_table):
+                table.clear()
+                table.setRowCount(0)
+            return
         lines = [
             f"Bloco {'rígido' if result.rigid else 'flexível'} (NBR 6118:2023, 22.7.1)",
             f"Método: {result.audit.method}",
@@ -273,6 +308,198 @@ class MainWindow(QMainWindow):
                 for r in result.reinforcement
             ],
         )  # fmt: skip
+
+    # ----------------------------------------------------------------------------------
+    # Projeto e menu Arquivo (ADR-004)
+    # ----------------------------------------------------------------------------------
+
+    def _build_menu(self) -> None:
+        menu = self.menuBar().addMenu("&Arquivo")
+        key = QKeySequence.StandardKey
+        entries: tuple[tuple[str, QKeySequence.StandardKey, Callable[[], object]], ...] = (
+            ("&Novo", key.New, self.new_project),
+            ("&Abrir...", key.Open, self.open_project),
+            ("&Salvar", key.Save, self.save),
+            ("Salvar &como...", key.SaveAs, self.save_as),
+            ("Sai&r", key.Quit, self.close),
+        )
+        for text, shortcut, slot in entries:
+            action = QAction(text, self)
+            action.setShortcut(QKeySequence(shortcut))
+            action.triggered.connect(lambda _=False, slot=slot: slot())
+            menu.addAction(action)
+
+    def _watch_changes(self) -> None:
+        spins = (*self.cap.values(), *self.materials.values(), self.gamma_n, self.bar_diameter)
+        for box in spins:
+            box.valueChanged.connect(self._mark_modified)
+        self.aggressiveness.currentTextChanged.connect(self._mark_modified)
+        self.name.textChanged.connect(self._mark_modified)
+        self.notes.textChanged.connect(self._mark_modified)
+        for table in (self.columns, self.piles, self.loads):
+            table.itemChanged.connect(self._mark_modified)
+            table.model().rowsInserted.connect(self._mark_modified)
+            table.model().rowsRemoved.connect(self._mark_modified)
+
+    def _mark_modified(self, *_: object) -> None:
+        if not self._loading:
+            self.modified = True
+            self._update_title()
+
+    def _update_title(self) -> None:
+        name = self.name.text().strip() or _NEW_NAME
+        self.setWindowTitle(f"{name}[*] — BlocoCalc (NBR 6118:2023)")
+        self.setWindowModified(self.modified)
+
+    def project(self) -> Project:
+        """Projeto com as entradas da tela e os últimos resultados, como estão."""
+        geometry, materials, loads, detailing = self.inputs()
+        return Project(
+            name=self.name.text().strip() or _NEW_NAME,
+            notes=self.notes.toPlainText(),
+            geometry=geometry,
+            materials=materials,
+            loads=loads,
+            detailing=detailing,
+            result=self.result,
+            fem_result=self.fem_result,
+        )
+
+    def set_project(self, project: Project) -> None:
+        """Preenche a tela com o projeto (kN e kN·m) e mostra o resultado salvo."""
+        self._loading = True
+        try:
+            self.name.setText(project.name)
+            self.notes.setPlainText(project.notes)
+            for name, box in self.cap.items():
+                box.setValue(getattr(project.geometry.cap, name))
+            for name, box in self.materials.items():
+                box.setValue(getattr(project.materials, name))
+            self.gamma_n.setValue(project.loads.gamma_n)
+            self.bar_diameter.setValue(project.detailing.bar_diameter)
+            self.aggressiveness.setCurrentText(project.detailing.aggressiveness_class.value)
+            rows: tuple[tuple[QTableWidget, list[tuple[object, ...]]], ...] = (
+                (self.piles, [(p.id, p.x, p.y, p.size) for p in project.geometry.piles]),
+                (
+                    self.columns,
+                    [(c.id, c.x, c.y, c.bx, c.by) for c in project.geometry.columns],
+                ),
+                (self.loads, _load_rows(project.loads)),
+            )
+            for table, values in rows:
+                table.setRowCount(0)
+                for row in values:
+                    _append_row(table, row)
+            self.result, self.fem_result = project.result, project.fem_result
+            self._show(project.result)
+        finally:
+            self._loading = False
+
+    def save(self) -> bool:
+        return self.save_as() if self.path is None else self.save_to(self.path)
+
+    def save_as(self) -> bool:
+        start = str(self.path or Path(self.name.text().strip() or _NEW_NAME))
+        name, _ = QFileDialog.getSaveFileName(self, "Salvar projeto", start, _FILTER)
+        if not name:
+            return False
+        path = Path(name)
+        if path.suffix.lower() != EXTENSION:
+            path = path.with_name(path.name + EXTENSION)
+        return self.save_to(path)
+
+    def save_to(self, path: Path) -> bool:
+        """Grava o projeto; antes descarta ou recalcula resultados desatualizados."""
+        try:
+            project, warnings = refresh_project(self.project())
+            save_project(path, project)
+        except (ValueError, ProjectFileError) as error:
+            self.status.setText(f"Não foi possível salvar: {error}")
+            return False
+        self.result, self.fem_result = project.result, project.fem_result
+        self._show(project.result)
+        self.path, self.modified = path, False
+        self._update_title()
+        self.status.setText(" ".join((f"Projeto salvo em {path}.", *warnings)))
+        return True
+
+    def open_project(self) -> None:
+        if not self._confirm_discard():
+            return
+        start = str(self.path.parent) if self.path else ""
+        name, _ = QFileDialog.getOpenFileName(self, "Abrir projeto", start, _FILTER)
+        if name:
+            self.open_path(Path(name))
+
+    def open_path(self, path: Path) -> bool:
+        """Abre o projeto e avisa sobre resultados descartados e dados fora da tela."""
+        try:
+            project, warnings = refresh_project(load_project(path))
+        except (ValueError, ProjectFileError) as error:
+            self.status.setText(f"Não foi possível abrir: {error}")
+            return False
+        self.set_project(project)
+        self.path, self.modified = path, False
+        self._update_title()
+        shown = self.inputs()
+        saved = (project.geometry, project.materials, project.loads, project.detailing)
+        if not all(_same(a.model_dump(mode="json"), b.model_dump(mode="json"))
+                   for a, b in zip(shown, saved, strict=True)):  # fmt: skip
+            warnings = (
+                *warnings,
+                "O projeto tem dados que a tela não mostra ou arredonda (ex.: estaca quadrada); "
+                "ao salvar, valem os valores da tela.",
+            )
+        self.status.setText(" ".join((f"Projeto aberto: {path}.", *warnings)))
+        return True
+
+    def new_project(self) -> None:
+        if self._confirm_discard():
+            self.set_project(self._blank)
+            self.path, self.modified = None, False
+            self._update_title()
+            self.status.clear()
+
+    def _confirm_discard(self) -> bool:
+        """Pergunta se salva as alterações pendentes; False cancela a ação."""
+        if not self.modified:
+            return True
+        button = QMessageBox.StandardButton
+        answer = QMessageBox.question(
+            self,
+            "BlocoCalc",
+            f"Salvar as alterações em {self.name.text().strip() or _NEW_NAME}?",
+            button.Save | button.Discard | button.Cancel,
+        )
+        if answer == button.Save:
+            return self.save()
+        return answer == button.Discard
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - nome do Qt
+        if self._confirm_discard():
+            event.accept()
+        else:
+            event.ignore()
+
+
+def _load_rows(loads: LoadsInput) -> list[tuple[object, ...]]:
+    """Linhas da tabela de casos em kN e kN·m, um pilar por linha."""
+    return [
+        (case.id, c.column_id, c.n / KN, c.mx / KNM, c.my / KNM, c.hx / KN, c.hy / KN)
+        for case in loads.cases
+        for c in case.column_loads
+    ]
+
+
+def _same(a: object, b: object) -> bool:
+    """Igualdade de JSON com tolerância nos números (kN ↔ N e arredondamento da tela)."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(map(_same, a, b))
+    if isinstance(a, float) and isinstance(b, float):
+        return math.isclose(a, b, rel_tol=1e-9, abs_tol=1e-9)
+    return a == b
 
 
 def _fill(table: QTableWidget, headers: Sequence[str], rows: Sequence[Sequence[str]]) -> None:
