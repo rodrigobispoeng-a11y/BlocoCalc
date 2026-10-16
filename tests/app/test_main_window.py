@@ -22,9 +22,18 @@ from blococalc.analysis import (  # noqa: E402
 )
 from blococalc.app import __main__ as entry  # noqa: E402
 from blococalc.app import main_window  # noqa: E402
-from blococalc.app.main_window import KN, MainWindow, _append_row  # noqa: E402
+from blococalc.app.main_window import KN, MainWindow, _append_row, _check_rows  # noqa: E402
 from blococalc.persistence.project import load_project, save_project  # noqa: E402
-from blococalc.schemas import AnalysisResult, MaterialsInput, Project  # noqa: E402
+from blococalc.schemas import (  # noqa: E402
+    AnalysisResult,
+    Check,
+    CheckStatus,
+    CombinationType,
+    MaterialsInput,
+    PileShape,
+    Project,
+    Reference,
+)
 from tests.factories import quincunx_cap  # noqa: E402
 
 Button = QtWidgets.QMessageBox.StandardButton
@@ -199,13 +208,26 @@ def test_save_recomputes_result_of_edited_inputs(app: object, tmp_path: Path) ->
     assert "recalculado" in window.status.text()
 
 
-def test_open_warns_about_data_the_screen_does_not_show(app: object, tmp_path: Path) -> None:
+def test_square_piles_round_trip_without_warning(app: object, tmp_path: Path) -> None:
+    # B7 tem estacas quadradas: a tela agora mostra a forma e não perde nada ao salvar.
     window = MainWindow()
     project = window.project().model_copy(update={"geometry": quincunx_cap()})
     save_project(tmp_path / "b7.bloco", project)
     assert window.open_path(tmp_path / "b7.bloco")
-    assert len(window.inputs()[0].piles) == 5
-    assert "não mostra" in window.status.text()
+    assert window.inputs()[0] == quincunx_cap()
+    assert window.status.text() == f"Projeto aberto: {tmp_path / 'b7.bloco'}."
+
+
+def test_open_warns_about_values_the_screen_rounds(app: object, tmp_path: Path) -> None:
+    window = MainWindow()
+    geometry = window.inputs()[0]
+    cap = geometry.cap.model_copy(update={"h": 1000.04})
+    project = window.project().model_copy(
+        update={"geometry": geometry.model_copy(update={"cap": cap})}
+    )
+    save_project(tmp_path / "b1.bloco", project)
+    assert window.open_path(tmp_path / "b1.bloco")
+    assert "arredonda" in window.status.text()
 
 
 def test_open_invalid_file_keeps_window(app: object, tmp_path: Path) -> None:
@@ -348,3 +370,62 @@ def test_real_fem_from_the_screen(app: object, monkeypatch: pytest.MonkeyPatch) 
     assert window.fem_result is not None, window.status.text()
     assert window.fem_result.audit.method == FEM_METHOD
     assert len(window.fem_result.reactions) == 4
+
+
+def test_defaults_match_contract_defaults(app: object) -> None:
+    geometry, materials, loads, detailing = MainWindow().inputs()
+    assert {p.shape for p in geometry.piles} == {PileShape.CIRCULAR}
+    assert geometry.columns[0].reinforcement_ratio == pytest.approx(0.02)
+    assert loads.cases[0].combination is CombinationType.NORMAL
+    assert loads.include_cap_self_weight
+    assert (materials.gamma_c, materials.gamma_s) == (1.4, 1.15)
+    assert detailing.hooked
+
+
+def test_all_contract_fields_are_editable(app: object) -> None:
+    window = MainWindow()
+    window.piles.setRowCount(0)
+    _append_row(window.piles, ("E1", -600, 0, 400, "quadrada"))
+    _append_row(window.piles, ("E2", 600, 0, 400, "circular"))
+    window.columns.setRowCount(0)
+    _append_row(window.columns, ("P1", 0, 0, 400, 400, 1.5))
+    window.loads.setRowCount(0)
+    _append_row(window.loads, ("ELU1", "P1", 900, 0, 0, 0, 0, "especial"))
+    window.materials["gamma_c"].setValue(1.2)
+    window.materials["gamma_s"].setValue(1.0)
+    window.hooked.setChecked(False)
+    window.self_weight.setChecked(False)
+
+    geometry, materials, loads, detailing = window.inputs()
+    assert [p.shape for p in geometry.piles] == [PileShape.SQUARE, PileShape.CIRCULAR]
+    assert geometry.columns[0].reinforcement_ratio == pytest.approx(0.015)
+    assert loads.cases[0].combination is CombinationType.SPECIAL
+    assert not loads.include_cap_self_weight
+    assert (materials.gamma_c, materials.gamma_s) == (1.2, 1.0)
+    assert not detailing.hooked
+
+    window.set_project(window.project())
+    assert window.inputs() == (geometry, materials, loads, detailing)
+
+
+def test_unknown_pile_shape_is_reported(app: object) -> None:
+    window = MainWindow()
+    cell = window.piles.item(0, 4)
+    assert cell is not None
+    cell.setText("oval")
+    window.calculate()
+    assert window.result is None
+    assert "circular ou quadrada" in window.status.text()
+
+
+def test_forces_are_shown_in_kn() -> None:
+    check = Check(
+        id="mef_tracao_x_0",
+        description="Tração",
+        demand=433_700.0,
+        capacity=459_300.0,
+        unit="N",
+        status=CheckStatus.OK,
+        reference=Reference(source="docs/02-metodos.md", item="§4.5"),
+    )
+    assert _check_rows((check,))[0][1:4] == ("433.7", "459.3", "kN")

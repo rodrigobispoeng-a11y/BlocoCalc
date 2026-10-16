@@ -12,10 +12,12 @@ import math
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TypeVar
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -43,17 +45,22 @@ from blococalc.schemas import (
     AggressivenessClass,
     AnalysisResult,
     Cap,
+    Check,
     CheckStatus,
     Column,
     ColumnLoad,
+    CombinationType,
     DetailingInput,
     GeometryInput,
     LoadCase,
     LoadsInput,
     MaterialsInput,
     Pile,
+    PileShape,
     Project,
 )
+
+_Option = TypeVar("_Option", PileShape, CombinationType)
 
 KN = 1e3  # N
 KNM = 1e6  # N·mm
@@ -61,9 +68,18 @@ KNM = 1e6  # N·mm
 # Exemplo inicial: benchmark B1 (Macedo 2022, §6.1), Fd = 980 kN.
 _DEFAULT_PILES = (("E1", -600.0, -600.0), ("E2", 600.0, -600.0), ("E3", 600.0, 600.0),
                   ("E4", -600.0, 600.0))  # fmt: skip
-_PILE_HEADERS = ("Estaca", "x [mm]", "y [mm]", "φ [mm]")
-_COLUMN_HEADERS = ("Pilar", "x [mm]", "y [mm]", "bx [mm]", "by [mm]")
-_LOAD_HEADERS = ("Caso", "Pilar", "Nd [kN]", "Mxd [kN·m]", "Myd [kN·m]", "Hxd [kN]", "Hyd [kN]")
+_PILE_HEADERS = ("Estaca", "x [mm]", "y [mm]", "φ ou lado [mm]", "Forma")
+_COLUMN_HEADERS = ("Pilar", "x [mm]", "y [mm]", "bx [mm]", "by [mm]", "ρ [%]")
+_LOAD_HEADERS = ("Caso", "Pilar", "Nd [kN]", "Mxd [kN·m]", "Myd [kN·m]", "Hxd [kN]", "Hyd [kN]",
+                 "Combinação")  # fmt: skip
+# Rótulos da tela para os enums do contrato; célula vazia vale o primeiro (padrão do contrato).
+_SHAPES = {"circular": PileShape.CIRCULAR, "quadrada": PileShape.SQUARE}
+_COMBINATIONS = {
+    "normal": CombinationType.NORMAL,
+    "especial": CombinationType.SPECIAL,
+    "excepcional": CombinationType.EXCEPTIONAL,
+}
+_DEFAULT_RATIO = 100.0 * Column.model_fields["reinforcement_ratio"].default  # [%]
 _NEW_NAME = "Novo projeto"
 _FILTER = f"Projetos BlocoCalc (*{EXTENSION})"
 
@@ -142,15 +158,24 @@ class MainWindow(QMainWindow):
             "pile_embedment": _spin(100.0, 500.0),
             "cover": _spin(50.0, 200.0),
         }
-        self.columns = _table(_COLUMN_HEADERS, [("P1", 0.0, 0.0, 200.0, 650.0)])
-        self.materials = {"fck": _spin(35.0, 90.0), "fyk": _spin(500.0, 600.0)}
-        self.loads = _table(_LOAD_HEADERS, [("ELU1", "P1", 980.0, 0.0, 0.0, 0.0, 0.0)])
+        self.columns = _table(_COLUMN_HEADERS, [("P1", 0.0, 0.0, 200.0, 650.0, _DEFAULT_RATIO)])
+        self.materials = {
+            "fck": _spin(35.0, 90.0),
+            "fyk": _spin(500.0, 600.0),
+            "gamma_c": _spin(1.4, 2.0, decimals=2, minimum=1.0),
+            "gamma_s": _spin(1.15, 2.0, decimals=2, minimum=1.0),
+        }
+        self.loads = _table(_LOAD_HEADERS, [("ELU1", "P1", 980.0, 0.0, 0.0, 0.0, 0.0, "normal")])
         self.gamma_n = _spin(1.2, 2.0, decimals=2, minimum=1.0)
         self.bar_diameter = _spin(16.0, 40.0)
         self.aggressiveness = QComboBox()
         self.aggressiveness.addItems([c.value for c in AggressivenessClass])
         self.aggressiveness.setCurrentText(AggressivenessClass.II.value)
-        self.piles = _table(_PILE_HEADERS, [(*pile, 400.0) for pile in _DEFAULT_PILES])
+        self.hooked = QCheckBox("Ganchos nas pontas dos tirantes")
+        self.hooked.setChecked(True)
+        self.self_weight = QCheckBox("Peso próprio do bloco (5 % da normal, D7)")
+        self.self_weight.setChecked(True)
+        self.piles = _table(_PILE_HEADERS, [(*pile, 400.0, "circular") for pile in _DEFAULT_PILES])
         self.summary = QPlainTextEdit(readOnly=True)
         self.reactions_table = QTableWidget()
         self.checks_table = QTableWidget()
@@ -182,7 +207,7 @@ class MainWindow(QMainWindow):
         form.addWidget(project)
         groups = (
             ("Bloco [mm]", self.cap, ("Lx", "Ly", "h", "Embutimento da estaca", "Cobrimento")),
-            ("Materiais [MPa]", self.materials, ("fck", "fyk")),
+            ("Materiais", self.materials, ("fck [MPa]", "fyk [MPa]", "γc", "γs")),
         )
         for title, fields, labels in groups:
             box = QGroupBox(title)
@@ -195,13 +220,15 @@ class MainWindow(QMainWindow):
         detailing_layout.addRow("γn", self.gamma_n)
         detailing_layout.addRow("φ dos tirantes [mm]", self.bar_diameter)
         detailing_layout.addRow("Classe de agressividade", self.aggressiveness)
+        detailing_layout.addRow(self.hooked)
+        detailing_layout.addRow(self.self_weight)
         form.addWidget(detailing)
 
         tables = (
-            ("Pilares", self.columns, lambda n: (f"P{n}", 0.0, 0.0, 200.0, 200.0)),
-            ("Estacas", self.piles, lambda n: (f"E{n}", 0.0, 0.0, 400.0)),
+            ("Pilares", self.columns, lambda n: (f"P{n}", 0.0, 0.0, 200.0, 200.0, _DEFAULT_RATIO)),
+            ("Estacas", self.piles, lambda n: (f"E{n}", 0.0, 0.0, 400.0, "circular")),
             ("Casos de cálculo (um pilar por linha)", self.loads,
-             lambda n: ("ELU1", f"P{n}", 0.0, 0.0, 0.0, 0.0, 0.0)),
+             lambda n: ("ELU1", f"P{n}", 0.0, 0.0, 0.0, 0.0, 0.0, "normal")),
         )  # fmt: skip
         for title, table, default in tables:
             form.addWidget(self._table_box(title, table, default))
@@ -258,17 +285,23 @@ class MainWindow(QMainWindow):
         geometry = GeometryInput(
             cap=Cap(**{name: box.value() for name, box in self.cap.items()}),
             piles=tuple(
-                Pile(id=i, x=float(x), y=float(y), size=float(d))
-                for i, x, y, d in _rows(self.piles)
+                Pile(id=i, x=float(x), y=float(y), size=float(d),
+                     shape=_choice(shape, _SHAPES, f"forma da estaca {i}"))
+                for i, x, y, d, shape in _rows(self.piles)
             ),
             columns=tuple(
-                Column(id=i, x=float(x), y=float(y), bx=float(bx), by=float(by))
-                for i, x, y, bx, by in _rows(self.columns)
+                Column(id=i, x=float(x), y=float(y), bx=float(bx), by=float(by),
+                       reinforcement_ratio=float(ratio or _DEFAULT_RATIO) / 100.0)
+                for i, x, y, bx, by, ratio in _rows(self.columns)
             ),
-        )
+        )  # fmt: skip
         materials = MaterialsInput(**{k: b.value() for k, b in self.materials.items()})
         cases: dict[str, list[ColumnLoad]] = {}
-        for case_id, column_id, n, mx, my, hx, hy in _rows(self.loads):
+        combinations: dict[str, CombinationType] = {}
+        for case_id, column_id, n, mx, my, hx, hy, combination in _rows(self.loads):
+            kind = _choice(combination, _COMBINATIONS, f"combinação do caso {case_id}")
+            if combinations.setdefault(case_id, kind) is not kind:
+                raise ValueError(f"o caso {case_id} tem linhas com combinações diferentes")
             cases.setdefault(case_id, []).append(
                 ColumnLoad(
                     column_id=column_id,
@@ -284,13 +317,18 @@ class MainWindow(QMainWindow):
         detailing = DetailingInput(
             bar_diameter=self.bar_diameter.value(),
             aggressiveness_class=AggressivenessClass(self.aggressiveness.currentText()),
+            hooked=self.hooked.isChecked(),
         )
         return (
             geometry,
             materials,
             LoadsInput(
-                cases=tuple(LoadCase(id=k, column_loads=tuple(v)) for k, v in cases.items()),
+                cases=tuple(
+                    LoadCase(id=k, combination=combinations[k], column_loads=tuple(v))
+                    for k, v in cases.items()
+                ),
                 gamma_n=self.gamma_n.value(),
+                include_cap_self_weight=self.self_weight.isChecked(),
             ),
             detailing,
         )
@@ -330,12 +368,8 @@ class MainWindow(QMainWindow):
         _fill(
             self.checks_table,
             ("Verificação", "Solicitante", "Resistente", "Unidade", "Situação", "Item"),
-            [
-                (c.description, f"{c.demand:.3f}", f"{c.capacity:.3f}", c.unit,
-                 c.status.value, f"{c.reference.source}, {c.reference.item}")
-                for c in result.checks
-            ],
-        )  # fmt: skip
+            _check_rows(result.checks),
+        )
         _fill(
             self.reinforcement_table,
             ("Armadura", "Tipo", "As [cm²]", "φ [mm]", "Item"),
@@ -371,6 +405,8 @@ class MainWindow(QMainWindow):
         for box in spins:
             box.valueChanged.connect(self._inputs_changed)
         self.aggressiveness.currentTextChanged.connect(self._inputs_changed)
+        self.hooked.toggled.connect(self._inputs_changed)
+        self.self_weight.toggled.connect(self._inputs_changed)
         self.name.textChanged.connect(self._mark_modified)
         self.notes.textChanged.connect(self._mark_modified)
         for table in (self.columns, self.piles, self.loads):
@@ -425,14 +461,17 @@ class MainWindow(QMainWindow):
             self.gamma_n.setValue(project.loads.gamma_n)
             self.bar_diameter.setValue(project.detailing.bar_diameter)
             self.aggressiveness.setCurrentText(project.detailing.aggressiveness_class.value)
+            self.hooked.setChecked(project.detailing.hooked)
+            self.self_weight.setChecked(project.loads.include_cap_self_weight)
+            geometry = project.geometry
             rows: tuple[tuple[QTableWidget, list[tuple[object, ...]]], ...] = (
-                (self.piles, [(p.id, p.x, p.y, p.size) for p in project.geometry.piles]),
-                (
-                    self.columns,
-                    [(c.id, c.x, c.y, c.bx, c.by) for c in project.geometry.columns],
-                ),
+                (self.piles, [(p.id, p.x, p.y, p.size, _label(p.shape, _SHAPES))
+                              for p in geometry.piles]),
+                (self.columns, [(c.id, c.x, c.y, c.bx, c.by,
+                                 round(100.0 * c.reinforcement_ratio, 6))
+                                for c in geometry.columns]),
                 (self.loads, _load_rows(project.loads)),
-            )
+            )  # fmt: skip
             for table, values in rows:
                 table.setRowCount(0)
                 for row in values:
@@ -496,8 +535,8 @@ class MainWindow(QMainWindow):
                    for a, b in zip(shown, saved, strict=True)):  # fmt: skip
             warnings = (
                 *warnings,
-                "O projeto tem dados que a tela não mostra ou arredonda (ex.: estaca quadrada); "
-                "ao salvar, valem os valores da tela.",
+                "A tela arredonda ou limita valores do projeto (ex.: mais casas decimais que a "
+                "caixa aceita); ao salvar, valem os valores da tela.",
             )
         self.status.setText(" ".join((f"Projeto aberto: {path}.", *warnings)))
         return True
@@ -571,7 +610,11 @@ class MainWindow(QMainWindow):
             return
         lines = [
             f"Método: {result.audit.method}",
-            *(f"Malha: {v:g}" for k, v in result.audit.parameters.items() if k == "mesh_size_mm"),
+            *(
+                f"Malha: {v:g} mm"
+                for k, v in result.audit.parameters.items()
+                if k == "mesh_size_mm"
+            ),
             "",
             "Reações do MEF:",
             *(f"- {r.pile_id} ({r.case_id}): {r.force / KN:.2f} kN" for r in result.reactions),
@@ -588,21 +631,52 @@ class MainWindow(QMainWindow):
         _fill(
             self.fem_table,
             ("Verificação", "Solicitante", "Referência", "Unidade", "Situação", "Item"),
-            [
-                (c.description, f"{c.demand:.4g}", f"{c.capacity:.4g}", c.unit,
-                 c.status.value, f"{c.reference.source}, {c.reference.item}")
-                for c in result.checks
-            ],
-        )  # fmt: skip
+            _check_rows(result.checks),
+        )
 
 
 def _load_rows(loads: LoadsInput) -> list[tuple[object, ...]]:
     """Linhas da tabela de casos em kN e kN·m, um pilar por linha."""
     return [
-        (case.id, c.column_id, c.n / KN, c.mx / KNM, c.my / KNM, c.hx / KN, c.hy / KN)
+        (
+            case.id,
+            c.column_id,
+            c.n / KN,
+            c.mx / KNM,
+            c.my / KNM,
+            c.hx / KN,
+            c.hy / KN,
+            _label(case.combination, _COMBINATIONS),
+        )
         for case in loads.cases
         for c in case.column_loads
     ]
+
+
+def _check_rows(checks: Sequence[Check]) -> list[tuple[str, ...]]:
+    """Linhas de verificação com forças em kN, como no resto da tela."""
+    rows: list[tuple[str, ...]] = []
+    for c in checks:
+        scale, unit = (KN, "kN") if c.unit == "N" else (1.0, c.unit)
+        rows.append(
+            (c.description, f"{c.demand / scale:.4g}", f"{c.capacity / scale:.4g}", unit,
+             c.status.value, f"{c.reference.source}, {c.reference.item}")
+        )  # fmt: skip
+    return rows
+
+
+def _choice(text: str, options: dict[str, _Option], field: str) -> _Option:
+    """Rótulo da célula para o enum; vazio vale a primeira opção (padrão do contrato)."""
+    if not text:
+        return next(iter(options.values()))
+    try:
+        return options[text.lower()]
+    except KeyError:
+        raise ValueError(f"{field} deve ser {' ou '.join(options)}") from None
+
+
+def _label(value: _Option, options: dict[str, _Option]) -> str:
+    return next(label for label, option in options.items() if option is value)
 
 
 def _same(a: object, b: object) -> bool:
