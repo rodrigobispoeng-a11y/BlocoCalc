@@ -25,12 +25,13 @@ src/blococalc/
 ├── fem/           # adapters gmsh/ccx (D14; ccx externo: parâmetro, BLOCOCALC_CCX ou PATH)
 ├── viz/           # cenas PyVista/VTK (fase posterior)
 ├── persistence/   # arquivo de projeto .bloco (ADR-004)
+├── report/        # memorial de cálculo em HTML (ADR-005) — função pura
 └── app/           # PySide6: única camada que conhece Qt (python -m blococalc.app)
 tests/             # unit, golden, benchmark
 ```
 
 Regras de dependência (verificadas em `tests/unit/test_architecture.py`):
-- `core`, `standards` e `geometry` não importam `fem`, `viz`, `persistence` nem `app`;
+- `core`, `standards`, `geometry` e `report` não importam `fem`, `viz`, `persistence` nem `app`;
 - `app` é a única camada que conhece Qt;
 - Fronteira entre subpacotes: apenas os modelos de `blococalc.schemas`;
 - Contratos evoluem por versionamento (v1 -> v2) com ADR, nunca por quebra silenciosa.

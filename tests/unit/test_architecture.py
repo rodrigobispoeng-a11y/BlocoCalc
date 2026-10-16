@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 PACKAGE = Path(__file__).resolve().parents[2] / "src" / "blococalc"
-PURE = ("core", "standards", "geometry")
+PURE = ("core", "standards", "geometry", "report")
 FORBIDDEN = ("blococalc.fem", "blococalc.viz", "blococalc.persistence", "blococalc.app")
 FORBIDDEN_THIRD_PARTY = ("PySide6", "pyvista", "vtk", "gmsh")
 
