@@ -2,15 +2,18 @@
 
 Conversões de unidade só aqui (CLAUDE.md §4): a tela usa kN e kN·m; o motor, N e N·mm.
 A tela só conhece `blococalc.analysis`, `blococalc.persistence` e `blococalc.schemas`.
-O menu Arquivo grava e abre projetos `.bloco` (ADR-004).
+O menu Arquivo grava e abre projetos `.bloco` (ADR-004). A conferência por MEF (D14) roda em
+segundo plano, com o formulário bloqueado até terminar.
 """
 
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox,
@@ -34,12 +37,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from blococalc.analysis import analyze, refresh_project
+from blococalc.analysis import analyze, fem_verification, refresh_project
 from blococalc.persistence.project import EXTENSION, ProjectFileError, load_project, save_project
 from blococalc.schemas import (
     AggressivenessClass,
     AnalysisResult,
     Cap,
+    CheckStatus,
     Column,
     ColumnLoad,
     DetailingInput,
@@ -89,6 +93,26 @@ def _append_row(table: QTableWidget, values: Sequence[object]) -> None:
         table.setItem(row, column, QTableWidgetItem(str(value)))
 
 
+class _FemRunner(QObject):
+    """Roda `fem_verification` numa thread e entrega o resultado (ou a falha) na thread da tela."""
+
+    finished = Signal(object)
+
+    def start(
+        self, inputs: tuple[GeometryInput, MaterialsInput, LoadsInput, DetailingInput]
+    ) -> None:
+        threading.Thread(target=self._run, args=(inputs,), daemon=True).start()
+
+    def _run(
+        self, inputs: tuple[GeometryInput, MaterialsInput, LoadsInput, DetailingInput]
+    ) -> None:
+        try:
+            outcome: AnalysisResult | Exception = fem_verification(*inputs)
+        except Exception as error:  # qualquer falha do MEF vai para a tela
+            outcome = error
+        self.finished.emit(outcome)
+
+
 def _rows(table: QTableWidget) -> list[list[str]]:
     """Texto das células; célula vazia vira "" e falha na conversão com mensagem na tela."""
     cells = (
@@ -136,6 +160,13 @@ class MainWindow(QMainWindow):
 
         self.calculate_button = QPushButton("Calcular")
         self.calculate_button.clicked.connect(self.calculate)
+        self.fem_button = QPushButton("Conferir por MEF")
+        self.fem_button.clicked.connect(self.run_fem)
+        self.fem_summary = QPlainTextEdit(readOnly=True)
+        self.fem_table = QTableWidget()
+        self.fem_running = False
+        self._fem_runner = _FemRunner(self)
+        self._fem_runner.finished.connect(self._fem_finished)
         self._build_layout()
         self._build_menu()
         self._watch_changes()
@@ -175,23 +206,29 @@ class MainWindow(QMainWindow):
         for title, table, default in tables:
             form.addWidget(self._table_box(title, table, default))
         form.addWidget(self.calculate_button)
+        form.addWidget(self.fem_button)
 
         tabs = QTabWidget()
         tabs.addTab(self.summary, "Resumo")
         tabs.addTab(self.reactions_table, "Reações")
         tabs.addTab(self.checks_table, "Verificações")
         tabs.addTab(self.reinforcement_table, "Armaduras")
+        fem_tab = QWidget()
+        fem_layout = QVBoxLayout(fem_tab)
+        fem_layout.addWidget(self.fem_summary, 1)
+        fem_layout.addWidget(self.fem_table, 2)
+        tabs.addTab(fem_tab, "MEF")
         right = QVBoxLayout()
         right.addWidget(tabs)
         right.addWidget(self.status)
 
         form_widget = QWidget()
         form_widget.setLayout(form)
-        scroll = QScrollArea()
-        scroll.setWidget(form_widget)
-        scroll.setWidgetResizable(True)
+        self.form_area = QScrollArea()
+        self.form_area.setWidget(form_widget)
+        self.form_area.setWidgetResizable(True)
         root = QHBoxLayout()
-        root.addWidget(scroll, 1)
+        root.addWidget(self.form_area, 1)
         root.addLayout(right, 2)
         central = QWidget()
         central.setLayout(root)
@@ -332,14 +369,24 @@ class MainWindow(QMainWindow):
     def _watch_changes(self) -> None:
         spins = (*self.cap.values(), *self.materials.values(), self.gamma_n, self.bar_diameter)
         for box in spins:
-            box.valueChanged.connect(self._mark_modified)
-        self.aggressiveness.currentTextChanged.connect(self._mark_modified)
+            box.valueChanged.connect(self._inputs_changed)
+        self.aggressiveness.currentTextChanged.connect(self._inputs_changed)
         self.name.textChanged.connect(self._mark_modified)
         self.notes.textChanged.connect(self._mark_modified)
         for table in (self.columns, self.piles, self.loads):
-            table.itemChanged.connect(self._mark_modified)
-            table.model().rowsInserted.connect(self._mark_modified)
-            table.model().rowsRemoved.connect(self._mark_modified)
+            table.itemChanged.connect(self._inputs_changed)
+            table.model().rowsInserted.connect(self._inputs_changed)
+            table.model().rowsRemoved.connect(self._inputs_changed)
+
+    def _inputs_changed(self, *_: object) -> None:
+        """Entrada alterada: o resultado do MEF deixa de valer e sai da tela."""
+        if self._loading:
+            return
+        self._mark_modified()
+        if self.fem_result is not None:
+            self.fem_result = None
+            self._show_fem(None)
+            self.status.setText("Entradas alteradas: o resultado do MEF foi descartado.")
 
     def _mark_modified(self, *_: object) -> None:
         if not self._loading:
@@ -392,6 +439,7 @@ class MainWindow(QMainWindow):
                     _append_row(table, row)
             self.result, self.fem_result = project.result, project.fem_result
             self._show(project.result)
+            self._show_fem(project.fem_result)
         finally:
             self._loading = False
 
@@ -418,6 +466,7 @@ class MainWindow(QMainWindow):
             return False
         self.result, self.fem_result = project.result, project.fem_result
         self._show(project.result)
+        self._show_fem(project.fem_result)
         self.path, self.modified = path, False
         self._update_title()
         self.status.setText(" ".join((f"Projeto salvo em {path}.", *warnings)))
@@ -480,6 +529,71 @@ class MainWindow(QMainWindow):
             event.accept()
         else:
             event.ignore()
+
+    # ----------------------------------------------------------------------------------
+    # Conferência por MEF (D14)
+    # ----------------------------------------------------------------------------------
+
+    def run_fem(self) -> None:
+        """Roda o MEF em segundo plano; o formulário fica bloqueado até o fim."""
+        try:
+            inputs = self.inputs()
+        except ValueError as error:
+            self.status.setText(f"Não foi possível rodar o MEF: {error}")
+            return
+        self.fem_running = True
+        self.form_area.setEnabled(False)
+        self.status.setText("Rodando o MEF (gmsh e CalculiX); pode levar alguns minutos...")
+        self._fem_runner.start(inputs)
+
+    def _fem_finished(self, outcome: object) -> None:
+        self.fem_running = False
+        self.form_area.setEnabled(True)
+        if not isinstance(outcome, AnalysisResult):
+            hint = " Instale o extra fem (gmsh)." if isinstance(outcome, ImportError) else ""
+            self.status.setText(f"Não foi possível rodar o MEF: {outcome}.{hint}")
+            return
+        self.fem_result = outcome
+        self._show_fem(outcome)
+        self._mark_modified()
+        failed = sum(c.status is not CheckStatus.OK for c in outcome.checks)
+        self.status.setText(
+            f"MEF concluído: {failed} verificação(ões) não atendida(s). Veja a aba MEF."
+            if failed
+            else "MEF concluído: todas as verificações atendidas. Veja a aba MEF."
+        )
+
+    def _show_fem(self, result: AnalysisResult | None) -> None:
+        if result is None:
+            self.fem_summary.clear()
+            self.fem_table.clear()
+            self.fem_table.setRowCount(0)
+            return
+        lines = [
+            f"Método: {result.audit.method}",
+            *(f"Malha: {v:g}" for k, v in result.audit.parameters.items() if k == "mesh_size_mm"),
+            "",
+            "Reações do MEF:",
+            *(f"- {r.pile_id} ({r.case_id}): {r.force / KN:.2f} kN" for r in result.reactions),
+            "",
+            "Alertas:",
+            *(f"- {w}" for w in result.warnings or ("nenhum",)),
+            "",
+            "Premissas:",
+            *(f"- {a}" for a in result.audit.assumptions),
+            "",
+            result.disclaimer,
+        ]
+        self.fem_summary.setPlainText("\n".join(lines))
+        _fill(
+            self.fem_table,
+            ("Verificação", "Solicitante", "Referência", "Unidade", "Situação", "Item"),
+            [
+                (c.description, f"{c.demand:.4g}", f"{c.capacity:.4g}", c.unit,
+                 c.status.value, f"{c.reference.source}, {c.reference.item}")
+                for c in result.checks
+            ],
+        )  # fmt: skip
 
 
 def _load_rows(loads: LoadsInput) -> list[tuple[object, ...]]:

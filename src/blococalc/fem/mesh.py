@@ -44,7 +44,7 @@ def mesh_cap(geometry: GeometryInput, size: float | None = None) -> CapMesh:
         if abs(pile.x) + half > cap.lx / 2 + _TOL_MM or abs(pile.y) + half > cap.ly / 2 + _TOL_MM:
             raise ValueError(f"estaca {pile.id} fora do fundo do bloco")
     size = size or default_mesh_size(geometry)
-    gmsh.initialize(readConfigFiles=False)
+    gmsh.initialize(readConfigFiles=False, interruptible=False)  # roda fora da thread principal
     try:
         gmsh.option.setNumber("General.Terminal", 0)
         occ = gmsh.model.occ
