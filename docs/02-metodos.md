@@ -386,6 +386,41 @@ A diferença é a mesma nos dois tirantes, (2400/2247)·(2000/1848,6) = 1,156, o
 a geometria das bielas é a da fonte. MEF da D14 no B7 (malha 210 mm): tração de 1837 kN no
 plano x = −800 mm, contra 3505 kN dos tirantes do M5 que o cruzam em qualquer das opções.
 
+## 4.7 Estacas como apoios elásticos no MEF (especificação, D16 aprovada)
+
+Objetivo: tornar a conferência por MEF (D14) útil nos blocos com estaca interna. Com apoios
+rígidos, a estaca sob o pilar atrai muito mais carga do que o M1 dá e a comparação é invalidada
+pela regra de 1 % das reações. Na prática a estaca recalca e encurta, e a carga se redistribui.
+
+**Protótipo no B7** (quincôncio de Bavaresco, Nd = 10 000 kN sem γn nem peso próprio, C30,
+malha de 210 mm, cerca de 30 s por análise), com a cabeça de cada estaca rígida e uma mola
+axial `k` igual em todas:
+
+| k [kN/mm] | Estacas de canto (M1: 2000 kN) | Estaca central (M1: 2000 kN) |
+|---|---|---|
+| rígido (D14) | 1418 kN (−29 %) | 4332 kN (+117 %) |
+| 2000 | 1946 kN (−2,7 %) | 2216 kN (+10,8 %) |
+| 720 (E·A/L com E = 30 GPa, estaca 60×60 de 15 m, só o fuste) | 1979 kN (−1,0 %) | 2083 kN (+4,1 %) |
+| 200 | 1994 kN (−0,3 %) | 2024 kN (+1,2 %) |
+| 50 | 1999 kN (−0,1 %) | 2006 kN (+0,3 %) |
+
+A soma das reações bate com a carga em todos os casos (erro < 10⁻⁶). O resultado depende
+muito de `k`, e `k` depende do solo, da estaca e do comprimento: não há valor normativo para
+ele (a NBR 6122:2019 não fixa rigidez de estaca), então o programa não inventa um padrão.
+
+**Especificação (D16).**
+
+| Etapa | Regra | Fonte |
+|---|---|---|
+| Entrada | Rigidez axial opcional de cada estaca, `k` [N/mm na entrada interna, kN/mm na tela], vinda do projeto geotécnico (prova de carga, análise de recalque). Vazia = apoio rígido, exatamente como na D14 | ADR-007 |
+| Modelo | Cabeça de cada estaca rígida (todos os nós da área da cabeça com o mesmo deslocamento vertical, por equação), ligada a uma mola axial `k`; a restrição horizontal isostática da D14 não muda | D14 |
+| Mistura | Estacas com e sem `k` no mesmo bloco: as sem `k` ficam rígidas, com aviso de que a mistura concentra carga nas rígidas | — |
+| Reações | Com molas, a reação do MEF deixa de ser critério de validade: vira verificação de comparação com o M1, com alerta quando alguma estaca passa a reação do M1 em mais de 10 % ("M1 subestima a reação da estaca"). Sem molas, continua o critério de 1 % da D14 | D14, D15 |
+| Tirantes e nós | Mesmas comparações da D14, agora também nos blocos com estaca interna | D14 |
+| M1 | Continua com estacas de mesma rigidez. Com `k` diferentes entre estacas, aviso de que o M1 não considera a diferença | M1 |
+| Ajuda na tela | Texto de apoio, sem valor padrão: para estaca de ponta, `k ≈ Ecs·A/L` só do fuste é um limite superior; estacas de atrito são mais flexíveis | — |
+| Auditoria | Os valores de `k` usados entram nos parâmetros da trilha do MEF | CLAUDE.md §8 |
+
 ## 5. Benchmarks propostos
 
 Valores de referência serão **recalculados por nós** e conferidos contra a publicação. Diferenças
@@ -426,6 +461,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D13 | M5 para N estacas em grade retangular: pilar dividido em nx × ny partes, tirantes por linha e coluna com força por equilíbrio dos nós, face do nó D6 espraiada a 45° em todos os blocos (§4.4) | Aprovada (Rodrigo, 13/10/2026) |
 | D14 | Verificação por MEF linear (gmsh + CalculiX) dos blocos rígidos: apoios rígidos nas áreas das estacas, cargas como pressão nos pilares, tração nos planos entre linhas de estacas contra o M5 (alerta acima de 10 %) e tensão média nos nós contra fcd1/fcd3; só comparação, sob demanda (§4.5) | Aprovada (Rodrigo, 16/10/2026) |
 | D15 | M5 para estacas fora de grade: contorno convexo com bielas da regra atual, estacas internas sob o pilar com biela vertical (4/5 generalizada) e nó verificado com 1,4 × R, tirantes metade no anel e metade radiais (opção B da §4.6) | Aprovada (Rodrigo, 16/10/2026) |
+| D16 | Estacas como apoios elásticos no MEF: rigidez axial opcional por estaca dada pelo usuário (sem valor padrão), cabeça rígida com mola; com molas, reações do MEF comparadas ao M1 com alerta acima de 10 % em vez do critério de validade de 1 % (§4.7, ADR-007) | Aprovada (Rodrigo, 16/10/2026) |
 
 ## 7. Ainda falta neste documento
 
