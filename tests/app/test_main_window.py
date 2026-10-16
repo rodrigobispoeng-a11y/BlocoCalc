@@ -429,3 +429,42 @@ def test_forces_are_shown_in_kn() -> None:
         reference=Reference(source="docs/02-metodos.md", item="§4.5"),
     )
     assert _check_rows((check,))[0][1:4] == ("433.7", "459.3", "kN")
+
+
+def test_report_is_written_as_pdf(app: object, tmp_path: Path) -> None:
+    window = MainWindow()
+    window.calculate()
+    path = tmp_path / "b1 - memorial.pdf"
+    assert window.write_report(path)
+    content = path.read_bytes()
+    assert content.startswith(b"%PDF")
+    assert len(content) > 5_000
+    assert window.status.text() == f"Memorial salvo em {path}."
+
+
+def test_report_recomputes_stale_result(app: object, tmp_path: Path) -> None:
+    window = MainWindow()
+    window.calculate()
+    window.materials["fck"].setValue(30.0)
+    assert window.write_report(tmp_path / "m.pdf")
+    assert window.result is not None
+    assert window.result == analyze(*window.inputs())
+    assert "recalculado" in window.status.text()
+
+
+def test_report_needs_calculation(app: object, tmp_path: Path) -> None:
+    window = MainWindow()
+    assert not window.write_report(tmp_path / "m.pdf")
+    assert not (tmp_path / "m.pdf").exists()
+    assert "Calcule" in window.status.text()
+
+
+def test_report_from_menu_adds_extension(app: object, dialogs: FakeDialogs, tmp_path: Path) -> None:
+    window = MainWindow()
+    window.calculate()
+    dialogs.file = str(tmp_path / "memorial")
+    menu = window.menuBar().findChild(QtWidgets.QMenu)
+    assert menu is not None
+    action = next(a for a in menu.actions() if a.text() == "Gerar &memorial (PDF)...")
+    action.trigger()
+    assert (tmp_path / "memorial.pdf").read_bytes().startswith(b"%PDF")
