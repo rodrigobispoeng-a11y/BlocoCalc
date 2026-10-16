@@ -276,6 +276,49 @@ Como a fonte usa outro braço e não equilibra a linha, o B2 não é teste de ig
 publicação: os goldens são os valores recalculados, e a geometria das bielas (Lproj, α) confere
 com a fonte a 0,1 %.
 
+## 4.5 Verificação por MEF (especificação, D14 proposta)
+
+Objetivo: conferir por elementos finitos o modelo de bielas e tirantes (M5) dos blocos rígidos,
+como o M7 confere o pilar fictício. O dimensionamento continua pelo M5; o MEF gera verificações
+de comparação e alertas. Fontes: Macedo (2022), cap. 7 (ANSYS, análise linear com o maciço sem
+armadura, cargas como tensões nos pilares, estacas como apoios distribuídos na área da estaca);
+Bavaresco (2016), cap. 3 (SAP2000, análise linear, tração no fundo integrada em cortes verticais).
+
+**Especificação proposta (D14).**
+
+| Etapa | Regra | Fonte |
+|---|---|---|
+| Modelo | Sólido do bloco (lx × ly × h), elástico linear, sem armadura; tetraedros quadráticos (C3D10) gerados pelo gmsh e resolvidos pelo CalculiX | Macedo §7.1; Bavaresco §3 |
+| Material | `Ecs = αi·Eci`, `Eci = αE·5600·√fck` (fck ≤ 50 MPa), `αi = 0,8 + 0,2·fck/80 ≤ 1,0`, αE = 1,0 (granito e gnaisse) por padrão; ν = 0,2. Com apoios rígidos as tensões não dependem de E | NBR 6118:2023, 8.2.8 e 8.2.9 |
+| Malha | Tamanho máximo = menor entre lx, ly e h dividido por 10 (100 mm no B1) | convergência no B1, abaixo |
+| Apoios | Deslocamento vertical nulo em toda a área da cabeça de cada estaca, no plano do fundo do bloco (o embutimento não é modelado); restrição horizontal isostática (3 graus de liberdade), para as estacas não absorverem a tração dos tirantes. Mesma hipótese de estacas rígidas do M1 | M1; Macedo §7.1 |
+| Cargas | Em cada pilar real, γn·(1 + D7)·Nd como pressão na área do pilar, com os momentos em distribuição linear (Navier) e H como tração tangencial uniforme | D3, D7; Macedo §7.1 |
+| Validade do modelo | Reações do MEF contra as do M1 em cada estaca: diferença acima de 1 % invalida a comparação (aviso) | M1 |
+| Tirantes | Em cada plano vertical a meio caminho entre duas linhas de estacas vizinhas, resultante das tensões normais de tração no plano, comparada com a soma das forças dos tirantes do M5 que cruzam o mesmo plano. Alerta quando o MEF passa o M5 em mais de 10 % | Bavaresco §3.4 |
+| Nós | Média da tensão principal de compressão no volume do nó CCC (área do pilar × profundidade `y` do M5) contra fcd1, e no cilindro sobre cada estaca (área da estaca × 2·d′) contra fcd3. Alerta quando a média passa o limite; os picos da análise linear (cantos do pilar e borda da estaca) não são usados | NBR 6118:2023, 22.3.2 |
+| Uso | Chamada separada, sob demanda (dezenas de segundos por caso), sem entrar em `analyze()`; o resultado traz o tamanho da malha e o número de nós na trilha de auditoria | D2 |
+| Fora do escopo agora | Punção nas estacas de canto dos blocos flexíveis, análise não linear e armadura modelada | — |
+
+**Protótipo no B1** (pilar 20×65, Nd·γn = 1176 kN, sem peso próprio, d′ = 50 mm):
+
+| Grandeza | M1/M5 | MEF (malha 100 mm, 30 614 nós, 30 s) | Diferença |
+|---|---|---|---|
+| Reações | 294,0 kN | 293,7 a 294,1 kN | < 0,2 % |
+| Tração no plano x = 0 | 393,2 kN (2 × 196,6) | 412,4 kN | +4,9 % |
+| Tração no plano y = 0 | 312,8 kN (2 × 156,4) | 331,7 kN | +6,0 % |
+| Tensão média no nó do pilar | 8,62 MPa (eq. 20) | 8,17 MPa | −5 % |
+| Tensão média no nó da estaca | 2,59 MPa (eq. 19) | 1,59 MPa | −39 % |
+
+A tração converge com a malha (412,3, 412,4 e 414,5 kN com 150, 100 e 70 mm); a malha de 70 mm
+leva quase 4 min e não muda a resposta. O braço elástico (738 mm entre as resultantes) é menor
+que o `z` do M5 (822 mm), daí os 5 a 6 % a mais de tração; por isso o alerta proposto é de 10 %.
+
+**Dependências novas:** `gmsh` (pip, com wheels para Windows; licença GPL com exceções, a avaliar
+antes de distribuir o programa) e o executável do CalculiX (`ccx`, GPL, chamado como processo
+externo; no Windows vem com o PrePoMax ou o pacote bConverged, e o caminho fica configurável).
+No CI, o Ubuntu instala `calculix-ccx`; os testes do MEF ficam marcados e só rodam onde o `ccx`
+existe.
+
 ## 5. Benchmarks propostos
 
 Valores de referência serão **recalculados por nós** e conferidos contra a publicação. Diferenças
@@ -313,6 +356,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D11 | Armadura de suspensão (22.7.4.1.3): sem método de cálculo na norma nem nas referências; o programa mantém o alerta e o item de área zero no resultado | Aprovada (Rodrigo, 13/10/2026) |
 | D12 | Treliça 3D (M7) para confrontar D10: ótimo de `Σ Ft·lt` (Gomes eq. 3.7) por programa linear sobre todas as ligações, com planos e reações iguais aos do M5, verificações de cruzamento e inclinação depois do ótimo, e alerta quando o pilar fictício dá menos tração que o M7; adiciona numpy e scipy (§4.3) | Aprovada (Rodrigo, 13/10/2026) |
 | D13 | M5 para N estacas em grade retangular: pilar dividido em nx × ny partes, tirantes por linha e coluna com força por equilíbrio dos nós, face do nó D6 espraiada a 45° em todos os blocos (§4.4) | Aprovada (Rodrigo, 13/10/2026) |
+| D14 | Verificação por MEF linear (gmsh + CalculiX) dos blocos rígidos: apoios rígidos nas áreas das estacas, cargas como pressão nos pilares, tração nos planos entre linhas de estacas contra o M5 (alerta acima de 10 %) e tensão média nos nós contra fcd1/fcd3; só comparação, sob demanda (§4.5) | Proposta (Claude); aguarda Rodrigo |
 
 ## 7. Ainda falta neste documento
 
