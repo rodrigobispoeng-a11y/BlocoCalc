@@ -39,6 +39,9 @@ from blococalc.schemas import (
     CheckStatus,
     DetailingInput,
     GeometryInput,
+    LayoutMember,
+    LayoutMemberKind,
+    LayoutNode,
     LoadCase,
     LoadsInput,
     MaterialsInput,
@@ -48,6 +51,7 @@ from blococalc.schemas import (
     Reference,
     Reinforcement,
     ReinforcementKind,
+    StrutTieLayout,
 )
 from blococalc.standards.detailing import rigid_cap_detailing
 from blococalc.standards.durability import cover_check
@@ -134,11 +138,12 @@ def analyze(
     tie_height = geometry.cap.cover + options.bar_diameter / 2.0
     strengths = strut_tie_strengths(materials)
 
+    rigidity = rigidity_checks(geometry.cap, _model_inputs(geometry, loads.cases[0])[0].columns[0])
     checks: list[Check] = [
-        *rigidity_checks(geometry.cap, _model_inputs(geometry, loads.cases[0])[0].columns[0]),
+        *rigidity,
         cover_check(geometry.cap, options.aggressiveness_class, options.bar_diameter),
     ]
-    rigid = all(c.status is CheckStatus.OK for c in checks[:2])
+    rigid = all(c.status is CheckStatus.OK for c in rigidity)
     warnings: list[str] = [_MULTI_COLUMN_WARNING] if multiple else []
     reactions: list[PileReaction] = []
     envelope: dict[str, Reinforcement] = {}
@@ -438,6 +443,66 @@ def refresh_project(project: Project) -> tuple[Project, tuple[str, ...]]:
         updates["fem_result"] = None
         warnings.append(f"Resultado do MEF salvo {reason}; descartado, rode o MEF de novo.")
     return project.model_copy(update=updates), tuple(warnings)
+
+
+def strut_tie_layout(project: Project, case_id: str) -> StrutTieLayout | None:
+    """Nós e barras do modelo M5 de um caso, para a visualização 3D (ADR-006).
+
+    Refaz o mesmo modelo de `analyze()` (Santos/Stucchi, D13, D15; pilar fictício D10 com
+    vários pilares). z a partir da face inferior: nó da estaca na altura do tirante (D8), nó
+    superior de cada biela a y/2 do topo. Bloco flexível (D9) não tem treliça: devolve None.
+    """
+    geometry, loads = project.geometry, project.loads
+    case = next((c for c in loads.cases if c.id == case_id), None)
+    if case is None:
+        raise ValueError(f"Caso de cálculo {case_id} não existe no projeto.")
+    model_geometry, _ = _model_inputs(geometry, loads.cases[0])
+    rigidity = rigidity_checks(geometry.cap, model_geometry.columns[0])
+    if any(c.status is not CheckStatus.OK for c in rigidity):
+        return None
+    tie_height = geometry.cap.cover + project.detailing.bar_diameter / 2.0
+    self_weight = (
+        SELF_WEIGHT_RATIO * sum(load.n for load in case.column_loads)
+        if loads.include_cap_self_weight
+        else 0.0
+    )
+    reactions = rigid_cap_reactions(geometry, case, self_weight)
+    model_geometry, _ = _model_inputs(geometry, case)
+    model = santos_stucchi(
+        model_geometry,
+        reactions,
+        strut_tie_strengths(project.materials),
+        loads.gamma_n,
+        tie_height,
+    )
+    pile_z = geometry.cap.pile_embedment + tie_height
+    top_z = geometry.cap.h - model.y / 2.0
+    nodes = [LayoutNode(id=f"estaca_{p.id}", x=p.x, y=p.y, z=pile_z) for p in geometry.piles]
+    members: list[LayoutMember] = []
+    for strut in model.struts:
+        nodes.append(
+            LayoutNode(id=f"topo_{strut.pile_id}", x=strut.origin_x, y=strut.origin_y, z=top_z)
+        )
+        members.append(
+            LayoutMember(
+                id=f"biela_{strut.pile_id}",
+                kind=LayoutMemberKind.STRUT,
+                start=f"topo_{strut.pile_id}",
+                end=f"estaca_{strut.pile_id}",
+                force_d=strut.force_d * math.hypot(strut.l_proj, model.z) / model.z,
+            )
+        )
+    members += [
+        LayoutMember(
+            id=f"tirante_{t.pile_a}_{t.pile_b}",
+            kind=LayoutMemberKind.TIE,
+            start=f"estaca_{t.pile_a}",
+            end=f"estaca_{t.pile_b}",
+            force_d=t.force_d,
+        )
+        for t in model.ties
+    ]
+    return StrutTieLayout(case_id=case.id, nodes=tuple(nodes), members=tuple(members))
 
 
 def _stale_reason(result: AnalysisResult, input_hash: str) -> str | None:
