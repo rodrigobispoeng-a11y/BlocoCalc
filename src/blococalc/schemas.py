@@ -1,4 +1,4 @@
-"""Contratos de dados entre módulos (schemas v4, ADR-002, ADR-003 e ADR-004).
+"""Contratos de dados entre módulos (schemas v4, ADR-002 a ADR-004; layout transitório, ADR-006).
 
 Unidades internas fixas: N, mm, MPa. Conversões acontecem só nas bordas (UI e importação).
 Estes modelos são o único formato que atravessa a fronteira entre subpacotes. Mudanças
@@ -247,6 +247,41 @@ class AnalysisResult(_Versioned):
     disclaimer: str = (
         "Resultado de apoio ao projeto. Exige revisão por engenheiro habilitado antes de uso."
     )
+
+
+# --------------------------------------------------------------------------------------
+# Geometria do modelo de bielas e tirantes (ADR-006): transitória, fora do arquivo .bloco
+# --------------------------------------------------------------------------------------
+
+
+class LayoutMemberKind(StrEnum):
+    STRUT = "strut"
+    TIE = "tie"
+
+
+class LayoutNode(_Contract):
+    """Nó do modelo. z a partir da face inferior do bloco [mm]."""
+
+    id: str = Field(min_length=1)
+    x: float
+    y: float
+    z: float
+
+
+class LayoutMember(_Contract):
+    id: str = Field(min_length=1)
+    kind: LayoutMemberKind
+    start: str
+    end: str
+    force_d: float = Field(ge=0, description="Força de cálculo na barra [N]")
+
+
+class StrutTieLayout(_Contract):
+    """Nós e barras do modelo M5 de um caso, para desenho; recalculada a partir das entradas."""
+
+    case_id: str
+    nodes: tuple[LayoutNode, ...]
+    members: tuple[LayoutMember, ...]
 
 
 # --------------------------------------------------------------------------------------
