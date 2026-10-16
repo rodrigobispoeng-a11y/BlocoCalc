@@ -175,6 +175,9 @@ def analyze(
             checks += _tag(case.id, m7_checks)
             warnings += m7_warnings
         warnings += [w for w in result.warnings if w not in warnings]
+        if model.interior_piles:
+            interior = _interior_pile_warning(model.interior_piles)
+            warnings += [interior] if interior not in warnings else []
         phi = options.bar_diameter
         items = [
             Reinforcement(
@@ -569,6 +572,16 @@ def _space_truss_comparison(
             f"Caso {case.id}: bielas da treliça 3D (M7) se cruzam fora dos nós: {pairs}."
         )
     return checks, warnings
+
+
+def _interior_pile_warning(pile_ids: Sequence[str]) -> str:
+    """D15: a reação das estacas internas pelo M1 subestima a real (docs/02-metodos.md §4.6)."""
+    return (
+        f"Estacas internas sob o pilar ({', '.join(pile_ids)}): reação pelo M1, com estacas de "
+        "mesma rigidez; no MEF de Bavaresco (2016) a estaca central recebeu 39 % acima da média. "
+        "O nó dessas estacas é verificado com 1,4 × R (D15); conferir também a capacidade "
+        "geotécnica delas."
+    )
 
 
 def _model_inputs(geometry: GeometryInput, case: LoadCase) -> tuple[GeometryInput, LoadCase]:

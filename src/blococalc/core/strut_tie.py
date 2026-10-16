@@ -2,11 +2,13 @@
 
 Especificação: docs/02-metodos.md §4.1 (Santos, Carvalho e Stucchi, 2019, eq. 19 a 21), com as
 decisões D4 (pilar retangular com as dimensões reais), D6 (profundidade `y` do nó CCC pelo
-equilíbrio horizontal do nó sob fcd1) e D13 (face do nó espraiada a 45°; grade de N estacas).
+equilíbrio horizontal do nó sob fcd1), D13 (face do nó espraiada a 45°; grade de N estacas) e
+D15 (estacas fora de grade, docs/02-metodos.md §4.6).
 
 Premissas do modelo, registradas na trilha de auditoria pelo chamador:
-- um pilar e estacas comprimidas: 2 a 4 no contorno do estaqueamento, ou 5 ou mais em grade
-  retangular completa nx × ny (D13, docs/02-metodos.md §4.4);
+- um pilar e estacas comprimidas: 2 a 4 no contorno do estaqueamento, 5 ou mais em grade
+  retangular completa nx × ny (D13, docs/02-metodos.md §4.4), ou contorno convexo com estacas
+  internas só sob o pilar (D15, §4.6);
 - a biela de cada estaca parte do centroide da parte da seção do pilar voltada para ela
   (generaliza ac/4 de Blévot para 2 e 4 estacas e ≈0,3·ac para 3 estacas); na grade, o pilar
   é dividido em nx × ny partes iguais;
@@ -15,7 +17,10 @@ Premissas do modelo, registradas na trilha de auditoria pelo chamador:
 - tirantes ligam estacas vizinhas no contorno; a força em cada um é a maior entre as duas
   extremidades (NBR 6118:2023, 22.7.4.1.1: armadura concentrada nas faixas sobre as estacas);
   na grade, há um tirante por linha e por coluna de estacas, com trechos entre estacas vizinhas
-  e força em cada trecho pelo equilíbrio dos nós de um lado ou do outro (o maior).
+  e força em cada trecho pelo equilíbrio dos nós de um lado ou do outro (o maior);
+- fora de grade (D15), estaca interna tem biela vertical a partir do próprio eixo; metade do
+  empuxo de cada estaca do contorno vai para um tirante radial (até a estaca interna ou a estaca
+  oposta, quando houver) e o resto para o anel do contorno.
 """
 
 from __future__ import annotations
@@ -31,6 +36,8 @@ _GRID = 100
 _LEVEL_TOL_MM = 1e-3  # coordenadas que diferem menos que isso estão na mesma linha da grade
 _MAX_ITER = 200
 _Y_TOL_MM = 1e-6
+_RADIAL_SHARE = 0.5  # D15: metade do empuxo no tirante radial (Bavaresco 2016, §5)
+INTERIOR_PILE_FACTOR = 1.4  # D15: folga de 40 % no nó da estaca interna (Bavaresco 2016, §5)
 
 
 class UnsupportedLayoutError(ValueError):
@@ -83,6 +90,7 @@ class StrutTieModel:
     z: float
     struts: tuple[Strut, ...]
     ties: tuple[Tie, ...]
+    interior_piles: tuple[str, ...] = ()  # D15: estacas internas sob o pilar
 
 
 def santos_stucchi(
@@ -96,14 +104,9 @@ def santos_stucchi(
     if len(geometry.columns) != 1:
         raise UnsupportedLayoutError("Modelo v1 aceita um único pilar por bloco")
     column = geometry.columns[0]
-    grid = _pile_grid(geometry.piles) if len(geometry.piles) > 4 else None
-    if grid is None:
-        piles = _hull_order(geometry.piles, column)
-        origins = _strut_origins(column, piles)
-    else:
-        piles = list(geometry.piles)
-        origins = _grid_origins(column, piles, grid)
     by_id = {r.pile_id: gamma_n * r.force for r in reactions}
+    layout = _layout(geometry.piles, column, by_id)
+    piles, origins, interior = layout.piles, layout.origins, layout.interior
     if any(by_id[p.id] <= 0.0 for p in piles):
         raise UnsupportedLayoutError("Estaca tracionada: fora do escopo do modelo v1")
 
@@ -130,6 +133,7 @@ def santos_stucchi(
     z = d - y / 2.0
 
     area_column = (column.bx + 2.0 * y) * (column.by + 2.0 * y)
+    inner_ids = {p.id for p in interior}
     struts = []
     for pile, (ox, oy, share), force, lp in zip(piles, origins, forces, l_proj, strict=True):
         # Estaca sob o centroide da sua parte do pilar (grade): biela vertical, sen²θ = 1.
@@ -144,26 +148,109 @@ def santos_stucchi(
                 l_proj=lp,
                 tan_theta=tan_t,
                 sigma_column_node=force / (area_column * share * sin2),
-                sigma_pile_node=force / (_pile_spread_area(pile, tie_height) * sin2),
+                sigma_pile_node=force
+                * (INTERIOR_PILE_FACTOR if pile.id in inner_ids else 1.0)
+                / (_pile_spread_area(pile, tie_height) * sin2),
             )
         )
-    if grid is None:
-        ties = _ties(piles, struts, z, strengths.fyd)
+    if layout.grid is not None:
+        ties = _grid_ties(piles, struts, z, strengths.fyd, layout.grid)
+    elif layout.polygon:
+        pushes = [_push(p, s, z) for p, s in zip(layout.outline, struts, strict=False)]
+        ties = _polygon_ties(layout.outline, interior, pushes, strengths.fyd, column)
     else:
-        ties = _grid_ties(piles, struts, z, strengths.fyd, grid)
-    return StrutTieModel(d=d, y=y, z=z, struts=tuple(struts), ties=ties)
+        ties = _ties(piles, struts, z, strengths.fyd)
+    return StrutTieModel(
+        d=d, y=y, z=z, struts=tuple(struts), ties=ties, interior_piles=tuple(p.id for p in interior)
+    )
+
+
+@dataclass(frozen=True)
+class _Layout:
+    piles: list[Pile]  # contorno primeiro, internas depois (D15)
+    origins: list[tuple[float, float, float]]  # origem da biela e fração da área do pilar
+    grid: _PileGrid | None = None
+    outline: tuple[Pile, ...] = ()
+    interior: tuple[Pile, ...] = ()
+
+    @property
+    def polygon(self) -> bool:
+        return bool(self.outline)
+
+
+def _layout(piles: Sequence[Pile], column: Column, reactions: dict[str, float]) -> _Layout:
+    """Grade (D13), contorno de 2 a 4 estacas (§4.1) ou contorno com estacas internas (D15)."""
+    grid = _grid_or_none(piles) if len(piles) > 4 else None
+    if grid is not None:
+        return _Layout(list(piles), _grid_origins(column, piles, grid), grid=grid)
+    outline, interior = _outline(piles, column)
+    if not interior and len(piles) <= 4:
+        ordered = _hull_order(piles, column)
+        return _Layout(ordered, _strut_origins(column, ordered))
+    # D15: a estaca interna fica com a parte do pilar proporcional à sua reação.
+    total = sum(reactions[p.id] for p in piles)
+    inner = sum(reactions[p.id] for p in interior) / total
+    origins = [(ox, oy, f * (1.0 - inner)) for ox, oy, f in _strut_origins(column, outline)]
+    origins += [(p.x, p.y, reactions[p.id] / total) for p in interior]
+    return _Layout([*outline, *interior], origins, outline=tuple(outline), interior=tuple(interior))
 
 
 def _hull_order(piles: Sequence[Pile], column: Column) -> list[Pile]:
     if len(piles) < 2:
         raise UnsupportedLayoutError("O modelo precisa de ao menos 2 estacas")
-    ordered = sorted(piles, key=lambda p: math.atan2(p.y - column.y, p.x - column.x))
-    if len(ordered) == 4:
-        for i, p in enumerate(ordered):  # estaca interna ao triângulo das outras três
-            a, b, c = (ordered[(i + k) % 4] for k in (1, 2, 3))
-            if _inside_triangle(p, a, b, c):
-                raise UnsupportedLayoutError(f"Estaca {p.id} não está no contorno")
-    return ordered
+    return sorted(piles, key=lambda p: math.atan2(p.y - column.y, p.x - column.x))
+
+
+def _grid_or_none(piles: Sequence[Pile]) -> _PileGrid | None:
+    """Grade da D13 ou None, para o estaqueamento seguir a D15."""
+    try:
+        return _pile_grid(piles)
+    except UnsupportedLayoutError:
+        return None
+
+
+def _outline(piles: Sequence[Pile], column: Column) -> tuple[list[Pile], list[Pile]]:
+    """Estacas do contorno convexo (em ordem angular) e estacas internas (D15).
+
+    Estaca sobre um lado do contorno, entre dois vértices, não tem tirante que a equilibre no anel
+    e fica fora do escopo; estaca interna precisa estar sob o pilar (biela vertical).
+    """
+    hull = _convex_hull(piles)
+    on_hull = {p.id for p in hull}
+    interior = [p for p in piles if p.id not in on_hull]
+    for p in interior:
+        for a, b in zip(hull, [*hull[1:], hull[0]], strict=True):
+            if abs(_cross(a, b, p)) <= _LEVEL_TOL_MM * math.dist((a.x, a.y), (b.x, b.y)):
+                raise UnsupportedLayoutError(
+                    f"Estacas alinhadas no contorno ({a.id}, {p.id}, {b.id}): fora do escopo (D15)"
+                )
+        if abs(p.x - column.x) > column.bx / 2.0 or abs(p.y - column.y) > column.by / 2.0:
+            raise UnsupportedLayoutError(
+                f"Estaca interna {p.id} precisa estar sob o pilar (D15, docs/02-metodos.md §4.6)"
+            )
+    ordered = sorted(hull, key=lambda p: math.atan2(p.y - column.y, p.x - column.x))
+    return ordered, interior
+
+
+def _convex_hull(piles: Sequence[Pile]) -> list[Pile]:
+    """Vértices do contorno convexo (cadeia monótona), sem pontos alinhados nos lados."""
+    pts = sorted(piles, key=lambda p: (p.x, p.y))
+    if len(pts) < 3:
+        return pts
+
+    def chain(points: Sequence[Pile]) -> list[Pile]:
+        out: list[Pile] = []
+        for p in points:
+            while len(out) >= 2 and _cross(out[-2], out[-1], p) <= _LEVEL_TOL_MM:
+                out.pop()
+            out.append(p)
+        return out[:-1]
+
+    return chain(pts) + chain(pts[::-1])
+
+
+def _cross(o: Pile, u: Pile, v: Pile) -> float:
+    return (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x)
 
 
 def _pile_grid(piles: Sequence[Pile]) -> _PileGrid:
@@ -206,14 +293,6 @@ def _grid_origins(
             )
         )
     return origins
-
-
-def _inside_triangle(p: Pile, a: Pile, b: Pile, c: Pile) -> bool:
-    def cross(o: Pile, u: Pile, v: Pile) -> float:
-        return (u.x - o.x) * (v.y - o.y) - (u.y - o.y) * (v.x - o.x)
-
-    signs = (cross(a, b, p), cross(b, c, p), cross(c, a, p))
-    return all(s > 0 for s in signs) or all(s < 0 for s in signs)
 
 
 def _strut_origins(column: Column, piles: Sequence[Pile]) -> list[tuple[float, float, float]]:
@@ -261,12 +340,25 @@ def _pile_spread_area(pile: Pile, tie_height: float) -> float:
 
 
 def _ties(piles: Sequence[Pile], struts: Sequence[Strut], z: float, fyd: float) -> tuple[Tie, ...]:
+    return _ring_ties(piles, [_push(p, s, z) for p, s in zip(piles, struts, strict=True)], fyd)
+
+
+def _push(pile: Pile, strut: Strut, z: float) -> tuple[float, float]:
+    """Componente horizontal da biela na estaca, H = R·lproj/z, para fora [N]."""
+    return (
+        strut.force_d / z * (pile.x - strut.origin_x),
+        strut.force_d / z * (pile.y - strut.origin_y),
+    )
+
+
+def _ring_ties(
+    piles: Sequence[Pile], pushes: Sequence[tuple[float, float]], fyd: float
+) -> tuple[Tie, ...]:
+    """Tirantes entre estacas vizinhas do contorno; cada um com a maior força das extremidades."""
     n = len(piles)
     edges = [(0, 1)] if n == 2 else [(i, (i + 1) % n) for i in range(n)]
     edge_force = {e: 0.0 for e in edges}
-    for i, (pile, strut) in enumerate(zip(piles, struts, strict=True)):
-        hx = strut.force_d / z * (pile.x - strut.origin_x)
-        hy = strut.force_d / z * (pile.y - strut.origin_y)
+    for i, (pile, (hx, hy)) in enumerate(zip(piles, pushes, strict=True)):
         mine = [e for e in edges if i in e]
         others = [piles[e[0] + e[1] - i] for e in mine]
         vecs = [_unit(o.x - pile.x, o.y - pile.y) for o in others]
@@ -285,6 +377,63 @@ def _ties(piles: Sequence[Pile], struts: Sequence[Strut], z: float, fyd: float) 
         ux, uy = _unit(piles[b].x - piles[a].x, piles[b].y - piles[a].y)
         ties.append(Tie(piles[a].id, piles[b].id, force, force / fyd, ux, uy))
     return tuple(ties)
+
+
+def _polygon_ties(
+    outline: Sequence[Pile],
+    interior: Sequence[Pile],
+    pushes: Sequence[tuple[float, float]],
+    fyd: float,
+    column: Column,
+) -> tuple[Tie, ...]:
+    """D15: metade do empuxo em tirantes radiais e o resto no anel do contorno.
+
+    O tirante radial vai até a estaca interna (se houver uma só) ou até a estaca oposta, quando a
+    linha entre as duas passa sob o pilar; sem parceiro, o anel fica com todo o empuxo. A força no
+    radial é metade da projeção do empuxo na sua direção, e o anel equilibra o restante.
+    """
+    by_id = {p.id: p for p in (*outline, *interior)}
+    reach = min(column.bx, column.by) / 2.0
+    radial: dict[tuple[str, str], float] = {}
+    ring_pushes = []
+    for pile, (hx, hy) in zip(outline, pushes, strict=True):
+        center = len(interior) == 1
+        partner = interior[0] if center else _opposite(pile, outline, column, reach)
+        if partner is not None and not center:  # diagonal só entre estacas mutuamente opostas
+            partner = partner if _opposite(partner, outline, column, reach) is pile else None
+        if partner is None:
+            ring_pushes.append((hx, hy))
+            continue
+        ux, uy = _unit(partner.x - pile.x, partner.y - pile.y)
+        force = max(-_RADIAL_SHARE * (hx * ux + hy * uy), 0.0)
+        ring_pushes.append((hx + force * ux, hy + force * uy))
+        key = (
+            (pile.id, partner.id)
+            if interior
+            else (min(pile.id, partner.id), max(pile.id, partner.id))
+        )
+        radial[key] = max(radial.get(key, 0.0), force)
+    ties = list(_ring_ties(outline, ring_pushes, fyd))
+    for (a, b), force in radial.items():
+        ux, uy = _unit(by_id[b].x - by_id[a].x, by_id[b].y - by_id[a].y)
+        ties.append(Tie(a, b, force, force / fyd, ux, uy))
+    return tuple(ties)
+
+
+def _opposite(pile: Pile, outline: Sequence[Pile], column: Column, reach: float) -> Pile | None:
+    """Estaca do contorno cuja linha até `pile` passa a menos de `reach` do centro do pilar."""
+    best, best_gap = None, reach
+    for other in outline:
+        if other is pile:
+            continue
+        ux, uy = _unit(other.x - pile.x, other.y - pile.y)
+        along = (column.x - pile.x) * ux + (column.y - pile.y) * uy
+        if not 0.0 < along < math.dist((pile.x, pile.y), (other.x, other.y)):
+            continue
+        gap = abs((column.x - pile.x) * uy - (column.y - pile.y) * ux)
+        if gap < best_gap:
+            best, best_gap = other, gap
+    return best
 
 
 def _grid_ties(
