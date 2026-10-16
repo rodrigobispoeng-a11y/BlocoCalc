@@ -1,6 +1,6 @@
 # ADR-006 — Visualização 3D do bloco e do modelo de bielas e tirantes
 
-- Status: proposta
+- Status: aceita (Rodrigo, 16/10/2026)
 - Contexto: a tela mostra o bloco só em tabelas. Para conferir a entrada (estaca fora do lugar,
   pilar trocado de eixo) e entender o resultado (por onde a carga desce, qual tirante governa),
   o engenheiro precisa ver o bloco em 3D. O CLAUDE.md já prevê PyVista/VTK em `viz` e PyVistaQt
