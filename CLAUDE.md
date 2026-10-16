@@ -23,7 +23,7 @@ src/blococalc/
 ├── standards/     # verificações NBR — funções puras
 ├── geometry/      # geometria paramétrica + pilar fictício — funções puras
 ├── fem/           # adapters gmsh/ccx (D14; ccx externo: parâmetro, BLOCOCALC_CCX ou PATH)
-├── viz/           # cenas PyVista/VTK (fase posterior)
+├── viz/           # cena 3D em malhas PyVista, sem Qt (ADR-006)
 ├── persistence/   # arquivo de projeto .bloco (ADR-004)
 ├── report/        # memorial de cálculo em HTML (ADR-005) — função pura
 └── app/           # PySide6: única camada que conhece Qt (python -m blococalc.app)
@@ -39,7 +39,7 @@ Regras de dependência (verificadas em `tests/unit/test_architecture.py`):
 ## 3. Comandos
 
 ```bash
-python -m pip install -e ".[dev,app,fem]"   # ou: make setup (conda)
+python -m pip install -e ".[dev,app,fem,viz]"   # ou: make setup (conda)
 make test        # pytest com cobertura
 make lint        # ruff check + ruff format --check
 make typecheck   # mypy --strict
