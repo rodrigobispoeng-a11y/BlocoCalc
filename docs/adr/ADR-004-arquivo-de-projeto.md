@@ -1,6 +1,6 @@
 # ADR-004 — Arquivo de projeto (schemas v4)
 
-- Status: proposta (aguarda aprovação de Rodrigo)
+- Status: aceita (Rodrigo, 16/10/2026)
 - Contexto: o app (`blococalc.app`) monta as entradas em tabelas, mas tudo se perde ao fechar a
   janela. Para uso real o projeto precisa ser salvo e reaberto com as entradas, o último
   resultado e a trilha de auditoria (CLAUDE.md §8), sem que um resultado antigo seja mostrado
