@@ -365,6 +365,12 @@ que hoje são recusados com aviso. Fonte principal: Bavaresco (2016), cap. 2 a 5
 | B (recomendada) | Metade do empuxo no anel e metade em tirantes radiais, da estaca até o centro do pilar (nos polígonos pares viram diagonais contínuas de uma estaca à oposta) | 876,4 kN (20,2 cm²) / 1239,3 kN (28,5 cm²) | igual à A, distribuído como a fonte recomenda |
 | C | Anel com 100 % e tirantes radiais com 50 % | 1752,7 kN / 1239,3 kN | 50 % a mais que A |
 
+O tirante radial da opção B (e da C) vai da estaca do contorno até a estaca interna, quando há
+uma só, ou até a estaca oposta, quando a linha entre as duas passa sob o pilar e cada uma é a
+oposta da outra (diagonais dos polígonos pares). Sem parceiro (polígono ímpar sem estaca
+central), o anel fica com todo o empuxo daquela estaca, como na opção A. A força no radial é
+metade da projeção do empuxo na sua direção, e o anel equilibra o restante em cada nó.
+
 **B7 recalculado** (γn = 1,2, sem o peso próprio D7 para comparar com a fonte, φ16, d′ = 58 mm):
 Rd = 2400 kN por estaca, d = 2100 − 100 − 58 = 1942 mm, `y` = 186,8 mm, z = 1848,6 mm,
 lproj = 1909 mm nas estacas de canto (igual à fonte: √2·(160 − 100/4) cm), H = 2478,7 kN.
