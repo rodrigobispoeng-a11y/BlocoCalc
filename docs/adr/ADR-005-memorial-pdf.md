@@ -1,6 +1,6 @@
 # ADR-005 — Memorial de cálculo em PDF
 
-- Status: proposta (aguarda aprovação de Rodrigo)
+- Status: aceita (Rodrigo, 16/10/2026)
 - Contexto: o resultado só existe na tela e no arquivo `.bloco` (ADR-004). Para anexar ao
   projeto e passar pela revisão de um engenheiro habilitado, o cálculo precisa sair num
   documento estável que liste método, cláusulas, premissas, versão dos parâmetros e o aviso de
