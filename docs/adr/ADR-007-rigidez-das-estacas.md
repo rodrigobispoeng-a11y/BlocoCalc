@@ -8,9 +8,9 @@
 - Decisão: publicar `schemas` v5, lendo v1 a v4 sem perda.
   1. `Pile` ganha `axial_stiffness: float | None = None` (> 0, N/mm). `None` mantém a estaca
      rígida, que é o comportamento atual; arquivos antigos abrem com todas as estacas rígidas.
-  2. O hash das entradas passa a ignorar campos `None`. Assim os arquivos v4 salvos continuam
-     com os resultados válidos, e uma estaca com rigidez informada muda o hash como qualquer
-     outra entrada.
+  2. O hash das entradas passa a ignorar campos `None` e a usar uma versão fixa ("4") no lugar
+     da versão do contrato. Assim os arquivos v4 salvos continuam com os resultados válidos, e
+     uma estaca com rigidez informada muda o hash como qualquer outra entrada.
   3. O valor só é usado pela conferência por MEF (D16). `analyze()` (M1 e M5) não muda e avisa
      quando as estacas têm rigidezes diferentes, porque o M1 supõe estacas iguais.
   4. Na tela, a tabela de estacas ganha a coluna "k [kN/mm]", vazia por padrão.

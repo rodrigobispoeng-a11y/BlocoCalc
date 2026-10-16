@@ -1,4 +1,4 @@
-"""Análise completa de um bloco sobre estacas: monta `AnalysisResult` (contratos v4).
+"""Análise completa de um bloco sobre estacas: monta `AnalysisResult` (contratos v5).
 
 É a única camada que combina `core` e `standards`, que não se importam entre si. Sem I/O.
 
@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import itertools
+import json
 import math
 from collections.abc import Sequence
 from dataclasses import replace
@@ -68,6 +69,7 @@ METHOD = "santos-stucchi-2019"
 FLEXIBLE_METHOD = "ceb70-nbr6118-flexao"  # ADR-003
 SECONDARY_RATIO = 0.20  # CEB-70 §3.2: armadura transversal ≥ 1/5 da principal
 SELF_WEIGHT_RATIO = 0.05  # D7
+_HASH_FORMAT = "4"  # ADR-007: formato do hash das entradas, igual ao da v4
 _M7_TOLERANCE = 0.01  # diferença numérica aceita no confronto D10 × M7
 
 _TIE_REF = Reference(source="NBR 6118:2023", item="22.3.3 / 22.7.4.1.1")
@@ -97,6 +99,10 @@ _FLEXIBLE_ASSUMPTIONS = (
 _MULTI_COLUMN_WARNING = (
     "Vários pilares: modelo com pilar fictício de área equivalente (D10), confrontado com a "
     "treliça 3D dos pilares reais (M7, D12); prever armaduras complementares entre os pilares."
+)
+_STIFFNESS_WARNING = (
+    "Estacas com rigidez diferente (D16): as reações do M1 supõem estacas iguais; a rigidez só "
+    "entra na conferência por MEF."
 )
 _M7_ASSUMPTION = (
     "Vários pilares: treliça 3D de menor Σ Ft·lt (M7) com os pilares reais em quatro nós cada, "
@@ -145,6 +151,8 @@ def analyze(
     ]
     rigid = all(c.status is CheckStatus.OK for c in rigidity)
     warnings: list[str] = [_MULTI_COLUMN_WARNING] if multiple else []
+    if len({p.axial_stiffness for p in geometry.piles}) > 1:
+        warnings.append(_STIFFNESS_WARNING)
     reactions: list[PileReaction] = []
     envelope: dict[str, Reinforcement] = {}
 
@@ -717,7 +725,14 @@ def _flagged(warnings: Sequence[str], phi: float) -> list[Reinforcement]:
 
 
 def _input_hash(*inputs: GeometryInput | MaterialsInput | LoadsInput | DetailingInput) -> str:
+    """SHA-256 das entradas sem os campos vazios e com a versão fixa do formato do hash.
+
+    ADR-007: campos novos e opcionais (como a rigidez das estacas) e a troca da versão do
+    contrato não invalidam os resultados salvos de entradas que não os usam.
+    """
     digest = hashlib.sha256()
     for item in inputs:
-        digest.update(item.model_dump_json().encode("utf-8"))
+        data = item.model_dump(mode="json", exclude_none=True)
+        data["schema_version"] = _HASH_FORMAT
+        digest.update(json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
     return digest.hexdigest()

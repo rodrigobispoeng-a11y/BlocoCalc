@@ -75,11 +75,15 @@ def test_defaults_follow_approved_decisions() -> None:
     assert (materials.gamma_c, materials.gamma_s, materials.fyk) == (1.4, 1.15, 500.0)
 
 
-@pytest.mark.parametrize("old", ["1", "2", "3"])
-def test_older_documents_are_read_as_v4(old: str) -> None:
+@pytest.mark.parametrize("old", ["1", "2", "3", "4"])
+def test_older_documents_are_read_as_v5(old: str) -> None:
     data = four_pile_cap().model_dump(mode="json")
     data["schema_version"] = old
-    assert GeometryInput.model_validate(data).schema_version == "4"
+    for pile in data["piles"]:
+        del pile["axial_stiffness"]
+    geometry = GeometryInput.model_validate(data)
+    assert geometry.schema_version == "5"
+    assert all(p.axial_stiffness is None for p in geometry.piles)
     v1_result = {
         "schema_version": "1",
         "rigid": True,
@@ -92,7 +96,7 @@ def test_older_documents_are_read_as_v4(old: str) -> None:
 
 def test_unknown_schema_version_is_rejected() -> None:
     data = four_pile_cap().model_dump(mode="json")
-    data["schema_version"] = "5"
+    data["schema_version"] = "6"
     with pytest.raises(ValidationError):
         GeometryInput.model_validate(data)
 
@@ -115,3 +119,13 @@ def test_flexure_reinforcement_kind() -> None:
         reference=Reference(source="NBR 6118:2023", item="17.2.2"),
     )
     assert item.kind is ReinforcementKind.FLEXURE
+
+
+def test_pile_stiffness_is_optional_and_positive() -> None:
+    # ADR-007: rigidez axial da estaca para o MEF (D16); vazia = apoio rígido.
+    pile = four_pile_cap().piles[0]
+    assert pile.axial_stiffness is None
+    assert pile.model_copy(update={"axial_stiffness": 720e3}).axial_stiffness == 720e3
+    for invalid in (0.0, -1.0):
+        with pytest.raises(ValidationError):
+            Pile(id="E1", x=0.0, y=0.0, size=400.0, axial_stiffness=invalid)
