@@ -75,11 +75,11 @@ def test_defaults_follow_approved_decisions() -> None:
     assert (materials.gamma_c, materials.gamma_s, materials.fyk) == (1.4, 1.15, 500.0)
 
 
-@pytest.mark.parametrize("old", ["1", "2"])
-def test_older_documents_are_read_as_v3(old: str) -> None:
+@pytest.mark.parametrize("old", ["1", "2", "3"])
+def test_older_documents_are_read_as_v4(old: str) -> None:
     data = four_pile_cap().model_dump(mode="json")
     data["schema_version"] = old
-    assert GeometryInput.model_validate(data).schema_version == "3"
+    assert GeometryInput.model_validate(data).schema_version == "4"
     v1_result = {
         "schema_version": "1",
         "rigid": True,
@@ -92,7 +92,7 @@ def test_older_documents_are_read_as_v3(old: str) -> None:
 
 def test_unknown_schema_version_is_rejected() -> None:
     data = four_pile_cap().model_dump(mode="json")
-    data["schema_version"] = "4"
+    data["schema_version"] = "5"
     with pytest.raises(ValidationError):
         GeometryInput.model_validate(data)
 

@@ -1,4 +1,4 @@
-"""Análise completa de um bloco sobre estacas: monta `AnalysisResult` (contratos v3).
+"""Análise completa de um bloco sobre estacas: monta `AnalysisResult` (contratos v4).
 
 É a única camada que combina `core` e `standards`, que não se importam entre si. Sem I/O.
 
@@ -44,6 +44,7 @@ from blococalc.schemas import (
     MaterialsInput,
     PileReaction,
     PileShape,
+    Project,
     Reference,
     Reinforcement,
     ReinforcementKind,
@@ -415,6 +416,36 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
             input_hash=_input_hash(geometry, materials, loads, options),
         ),
     )
+
+
+def refresh_project(project: Project) -> tuple[Project, tuple[str, ...]]:
+    """Descarta os resultados salvos que não valem para as entradas do projeto (ADR-004).
+
+    Um resultado só vale se o hash das entradas e a versão do programa forem os da gravação.
+    O de `analyze()` é recalculado; o do MEF é descartado sem rodar o MEF de novo.
+    """
+    current = _input_hash(project.geometry, project.materials, project.loads, project.detailing)
+    updates: dict[str, AnalysisResult | None] = {}
+    warnings: list[str] = []
+    result = project.result
+    if result is not None and (reason := _stale_reason(result, current)):
+        updates["result"] = analyze(
+            project.geometry, project.materials, project.loads, project.detailing
+        )
+        warnings.append(f"Resultado salvo {reason}; recalculado com as entradas do projeto.")
+    fem = project.fem_result
+    if fem is not None and (reason := _stale_reason(fem, current)):
+        updates["fem_result"] = None
+        warnings.append(f"Resultado do MEF salvo {reason}; descartado, rode o MEF de novo.")
+    return project.model_copy(update=updates), tuple(warnings)
+
+
+def _stale_reason(result: AnalysisResult, input_hash: str) -> str | None:
+    if result.audit.input_hash != input_hash:
+        return "não corresponde às entradas"
+    if result.audit.app_version != __version__:
+        return f"foi calculado pela versão {result.audit.app_version}"
+    return None
 
 
 def _fem_reaction_checks(fem: dict[str, float], m1: dict[str, float]) -> list[Check]:

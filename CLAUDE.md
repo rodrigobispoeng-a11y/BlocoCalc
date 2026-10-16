@@ -17,14 +17,14 @@ Pacote único (ADR-001):
 
 ```
 src/blococalc/
-├── schemas.py     # contratos v3 (Pydantic, ADR-002 e ADR-003): entradas, DetailingInput, AnalysisResult
+├── schemas.py     # contratos v4 (Pydantic, ADR-002 a 004): entradas, AnalysisResult, Project
 ├── analysis.py    # monta a análise completa; única ponte entre core e standards
 ├── core/          # motor analítico — funções puras, ZERO I/O
 ├── standards/     # verificações NBR — funções puras
 ├── geometry/      # geometria paramétrica + pilar fictício — funções puras
 ├── fem/           # adapters gmsh/ccx (D14; ccx externo: parâmetro, BLOCOCALC_CCX ou PATH)
 ├── viz/           # cenas PyVista/VTK (fase posterior)
-├── persistence/   # projetos e resultados (fase posterior)
+├── persistence/   # arquivo de projeto .bloco (ADR-004)
 └── app/           # PySide6: única camada que conhece Qt (python -m blococalc.app)
 tests/             # unit, golden, benchmark
 ```
