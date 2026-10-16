@@ -2,8 +2,8 @@
 
 Conversões de unidade só aqui (CLAUDE.md §4): a tela usa kN e kN·m; o motor, N e N·mm.
 A tela só conhece `blococalc.analysis`, `blococalc.persistence` e `blococalc.schemas`.
-O menu Arquivo grava e abre projetos `.bloco` (ADR-004). A conferência por MEF (D14) roda em
-segundo plano, com o formulário bloqueado até terminar.
+O menu Arquivo grava e abre projetos `.bloco` (ADR-004) e gera o memorial em PDF (ADR-005).
+A conferência por MEF (D14) roda em segundo plano, com o formulário bloqueado até terminar.
 """
 
 from __future__ import annotations
@@ -11,11 +11,20 @@ from __future__ import annotations
 import math
 import threading
 from collections.abc import Callable, Sequence
+from datetime import date
 from pathlib import Path
 from typing import TypeVar
 
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QMarginsF, QObject, Signal
+from PySide6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QKeySequence,
+    QPageLayout,
+    QPageSize,
+    QPdfWriter,
+    QTextDocument,
+)
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -41,6 +50,7 @@ from PySide6.QtWidgets import (
 
 from blococalc.analysis import analyze, fem_verification, refresh_project
 from blococalc.persistence.project import EXTENSION, ProjectFileError, load_project, save_project
+from blococalc.report import calculation_report
 from blococalc.schemas import (
     AggressivenessClass,
     AnalysisResult,
@@ -187,6 +197,8 @@ class MainWindow(QMainWindow):
         self.calculate_button.clicked.connect(self.calculate)
         self.fem_button = QPushButton("Conferir por MEF")
         self.fem_button.clicked.connect(self.run_fem)
+        self.report_button = QPushButton("Gerar memorial (PDF)")
+        self.report_button.clicked.connect(self.export_report)
         self.fem_summary = QPlainTextEdit(readOnly=True)
         self.fem_table = QTableWidget()
         self.fem_running = False
@@ -234,6 +246,7 @@ class MainWindow(QMainWindow):
             form.addWidget(self._table_box(title, table, default))
         form.addWidget(self.calculate_button)
         form.addWidget(self.fem_button)
+        form.addWidget(self.report_button)
 
         tabs = QTabWidget()
         tabs.addTab(self.summary, "Resumo")
@@ -392,6 +405,7 @@ class MainWindow(QMainWindow):
             ("&Abrir...", key.Open, self.open_project),
             ("&Salvar", key.Save, self.save),
             ("Salvar &como...", key.SaveAs, self.save_as),
+            ("Gerar &memorial (PDF)...", key.Print, self.export_report),
             ("Sai&r", key.Quit, self.close),
         )
         for text, shortcut, slot in entries:
@@ -572,6 +586,45 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------------------------
     # Conferência por MEF (D14)
     # ----------------------------------------------------------------------------------
+
+    def export_report(self) -> bool:
+        """Pergunta onde salvar e gera o memorial de cálculo em PDF (ADR-005)."""
+        stem = self.path.stem if self.path else self.name.text().strip() or _NEW_NAME
+        start = (self.path.parent if self.path else Path()) / f"{stem} - memorial.pdf"
+        name, _ = QFileDialog.getSaveFileName(
+            self, "Gerar memorial", str(start), "Documento PDF (*.pdf)"
+        )
+        if not name:
+            return False
+        path = Path(name)
+        if path.suffix.lower() != ".pdf":
+            path = path.with_name(path.name + ".pdf")
+        return self.write_report(path)
+
+    def write_report(self, path: Path) -> bool:
+        """Grava o memorial em PDF A4; só com resultado atual das entradas da tela."""
+        try:
+            project, warnings = refresh_project(self.project())
+            html = calculation_report(project, date.today())
+        except ValueError as error:
+            self.status.setText(f"Não foi possível gerar o memorial: {error}")
+            return False
+        self.result, self.fem_result = project.result, project.fem_result
+        self._show(project.result)
+        self._show_fem(project.fem_result)
+        writer = QPdfWriter(str(path))
+        writer.setTitle(f"Memorial de cálculo: {project.name}")
+        writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        writer.setPageMargins(QMarginsF(15, 15, 15, 15), QPageLayout.Unit.Millimeter)
+        document = QTextDocument()
+        document.setHtml(html)
+        document.print_(writer)
+        del writer  # fecha o arquivo antes de conferir
+        if not path.is_file() or path.stat().st_size == 0:
+            self.status.setText(f"Não foi possível gravar o memorial em {path}.")
+            return False
+        self.status.setText(" ".join((f"Memorial salvo em {path}.", *warnings)))
+        return True
 
     def run_fem(self) -> None:
         """Roda o MEF em segundo plano; o formulário fica bloqueado até o fim."""
