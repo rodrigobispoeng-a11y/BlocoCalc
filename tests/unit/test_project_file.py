@@ -37,7 +37,7 @@ def test_round_trip_keeps_inputs_and_result(tmp_path: Path) -> None:
     original = project()
     save_project(path, original)
     assert load_project(path) == original
-    assert '"schema_version": "4"' in path.read_text(encoding="utf-8")
+    assert '"schema_version": "5"' in path.read_text(encoding="utf-8")
     assert [p.name for p in tmp_path.iterdir()] == ["b1.bloco"]  # sem temporário esquecido
 
 

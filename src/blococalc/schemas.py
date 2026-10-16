@@ -1,4 +1,4 @@
-"""Contratos de dados entre módulos (schemas v4, ADR-002 a ADR-004; layout transitório, ADR-006).
+"""Contratos de dados entre módulos (schemas v5: ADR-002 a 004 e 007; layout 3D, ADR-006).
 
 Unidades internas fixas: N, mm, MPa. Conversões acontecem só nas bordas (UI e importação).
 Estes modelos são o único formato que atravessa a fronteira entre subpacotes. Mudanças
@@ -12,8 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION: Literal["4"] = "4"
-_READABLE_VERSIONS = ("1", "2", "3", "4")
+SCHEMA_VERSION: Literal["5"] = "5"
+_READABLE_VERSIONS = ("1", "2", "3", "4", "5")
 
 
 class _Contract(BaseModel):
@@ -23,9 +23,9 @@ class _Contract(BaseModel):
 
 
 class _Versioned(_Contract):
-    """Contrato de topo. Lê v1 a v3: as versões novas só acrescentam campos e valores."""
+    """Contrato de topo. Lê v1 a v4: as versões novas só acrescentam campos e valores."""
 
-    schema_version: Literal["4"] = SCHEMA_VERSION
+    schema_version: Literal["5"] = SCHEMA_VERSION
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -51,6 +51,11 @@ class Pile(_Contract):
     y: float = Field(description="Coordenada do eixo da estaca [mm]")
     size: float = Field(gt=0, description="Diâmetro (circular) ou lado (quadrada) [mm]")
     shape: PileShape = PileShape.CIRCULAR
+    axial_stiffness: float | None = Field(
+        default=None,
+        gt=0,
+        description="Rigidez axial para o MEF (D16, ADR-007) [N/mm]; vazia = apoio rígido",
+    )
 
 
 class Column(_Contract):
