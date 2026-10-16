@@ -12,15 +12,19 @@ Premissas aprovadas (docs/02-metodos.md §6, registradas na trilha de auditoria)
 - D10: vários pilares viram um pilar fictício de área equivalente por caso; as reações usam os
   pilares reais e o nó de cada pilar real é verificado à parte;
 - D12: no bloco rígido com vários pilares, a treliça 3D de menor energia (M7) com os pilares
-  reais confronta as trações no fundo do modelo de pilar fictício (docs/02-metodos.md §4.3).
+  reais confronta as trações no fundo do modelo de pilar fictício (docs/02-metodos.md §4.3);
+- D14: sob demanda, `fem_verification` confere o M5 por MEF linear (docs/02-metodos.md §4.5).
+  O pacote `fem` (gmsh e CalculiX) só é importado dentro dessa função.
 """
 
 from __future__ import annotations
 
 import hashlib
+import itertools
 import math
 from collections.abc import Sequence
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from blococalc import __version__
 from blococalc.core.cap_truss import cap_truss
@@ -39,6 +43,7 @@ from blococalc.schemas import (
     LoadsInput,
     MaterialsInput,
     PileReaction,
+    PileShape,
     Reference,
     Reinforcement,
     ReinforcementKind,
@@ -48,8 +53,11 @@ from blococalc.standards.durability import cover_check
 from blococalc.standards.flexure import design_section
 from blococalc.standards.rigidity import rigidity_checks
 from blococalc.standards.slab_shear import one_way_shear_check, punching_checks
-from blococalc.standards.strength import strut_tie_strengths
+from blococalc.standards.strength import StrutTieStrengths, strut_tie_strengths
 from blococalc.standards.strut_tie_checks import real_column_node_checks, strut_tie_checks
+
+if TYPE_CHECKING:
+    from blococalc.fem.post import StressField
 
 METHOD = "santos-stucchi-2019"
 FLEXIBLE_METHOD = "ceb70-nbr6118-flexao"  # ADR-003
@@ -88,6 +96,20 @@ _MULTI_COLUMN_WARNING = (
 _M7_ASSUMPTION = (
     "Vários pilares: treliça 3D de menor Σ Ft·lt (M7) com os pilares reais em quatro nós cada, "
     "planos do M5 e peso próprio nos pilares, só para confronto (D12)."
+)
+FEM_METHOD = "mef-linear-d14"
+_FEM_REACTION_LIMIT = 0.01  # D14: validade do modelo
+_FEM_TIE_LIMIT = 0.10  # D14: alerta de tirante
+_FEM_REF = Reference(source="docs/02-metodos.md", item="§4.5, D14")
+_FEM_NODE_REF = Reference(source="NBR 6118:2023", item="22.3.2; D14")
+_FEM_ASSUMPTIONS = (
+    "Sólido elástico linear sem armadura, C3D10 (gmsh + CalculiX), Ecs e ν = 0,2 (8.2.8, 8.2.9).",
+    "Estacas como apoios verticais rígidos na área da cabeça, no fundo do bloco; vinculação "
+    "horizontal isostática (D14).",
+    "Cargas dos pilares reais × γn·(1 + D7) como pressão (Navier) e cisalhamento uniforme.",
+    "Tração: tensões normais positivas em planos verticais entre linhas de estacas vizinhas.",
+    "Nós: média de −σ3 no prisma pilar × y do M5 (fcd1) e no volume estaca × 2·d′ (fcd3).",
+    "Comparação apenas: o dimensionamento continua pelo M5.",
 )
 _CORNER_PILES_WARNING = (
     "Bloco flexível: punção e cisalhamento junto às estacas de canto e de borda não são "
@@ -304,6 +326,198 @@ def _flexible_case(
         for axis, direction in (("x", (1.0, 0.0)), ("y", (0.0, 1.0)))
     ]
     return checks, items, warnings
+
+
+def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as opções do MEF
+    geometry: GeometryInput,
+    materials: MaterialsInput,
+    loads: LoadsInput,
+    detailing: DetailingInput | None = None,
+    *,
+    mesh_size: float | None = None,
+    ccx: str | None = None,
+) -> AnalysisResult:
+    """Confere o M5 de um bloco rígido por MEF linear (D14, docs/02-metodos.md §4.5).
+
+    Chamada separada de `analyze()`, sob demanda: exige o extra `fem` (gmsh) e o executável do
+    CalculiX (`ccx`, parâmetro, BLOCOCALC_CCX ou PATH). As reações devolvidas são as do MEF.
+    """
+    from blococalc.fem import ccx as solver  # noqa: PLC0415 (extra opcional)
+    from blococalc.fem import post  # noqa: PLC0415
+    from blococalc.fem.loads import column_nodal_forces  # noqa: PLC0415
+    from blococalc.fem.mesh import mesh_cap  # noqa: PLC0415
+
+    options = detailing or DetailingInput()
+    tie_height = geometry.cap.cover + options.bar_diameter / 2.0
+    strengths = strut_tie_strengths(materials)
+    ratio = SELF_WEIGHT_RATIO if loads.include_cap_self_weight else 0.0
+    checks = list(
+        rigidity_checks(geometry.cap, _model_inputs(geometry, loads.cases[0])[0].columns[0])
+    )
+    rigid = all(c.status is CheckStatus.OK for c in checks)
+    parameters: dict[str, float | str | bool] = {
+        "gamma_n": loads.gamma_n,
+        "tie_height_mm": tie_height,
+        "self_weight_ratio": ratio,
+        "Ecs_MPa": solver.secant_modulus(materials.fck),
+        "poisson": solver.POISSON,
+    }
+    warnings: list[str] = []
+    reactions: list[PileReaction] = []
+    if not rigid:
+        warnings.append(
+            "Bloco flexível pela NBR 6118:2023, 22.7.1: o MEF da D14 só confere o M5 de blocos "
+            "rígidos; nada foi calculado."
+        )
+    else:
+        mesh = mesh_cap(geometry, mesh_size)
+        parameters |= {"mesh_size_mm": mesh.size, "mesh_nodes": len(mesh.nodes)}
+        columns = {c.id: c for c in geometry.columns}
+        factor = loads.gamma_n * (1.0 + ratio)
+        for case in loads.cases:
+            forces = column_nodal_forces(mesh, columns, list(case.column_loads), factor)
+            result = solver.solve(mesh, forces, materials.fck, ccx)
+            field = post.StressField(mesh, result)
+            fem = post.pile_reactions(mesh, result)
+            reactions += [PileReaction(pile_id=k, case_id=case.id, force=v) for k, v in fem.items()]
+            # M1 com a mesma carga do MEF (D7 junto com os pilares) para validar o modelo.
+            m1 = {r.pile_id: factor * r.force for r in rigid_cap_reactions(geometry, case)}
+            model_geometry, _ = _model_inputs(geometry, case)
+            model = santos_stucchi(
+                model_geometry,
+                rigid_cap_reactions(geometry, case, ratio * sum(x.n for x in case.column_loads)),
+                strengths,
+                loads.gamma_n,
+                tie_height,
+            )
+            case_checks = [*_fem_reaction_checks(fem, m1), *_fem_tie_checks(geometry, model, field)]
+            case_checks += _fem_node_checks(geometry, model, field, strengths, tie_height)
+            checks += _tag(case.id, case_checks)
+            warnings += [
+                f"Caso {case.id}: {c.description} não atendida pelo MEF "
+                f"({c.demand:.4g} contra {c.capacity:.4g} {c.unit})."
+                for c in case_checks
+                if c.status is not CheckStatus.OK
+            ]
+    return AnalysisResult(
+        rigid=rigid,
+        reactions=tuple(reactions),
+        checks=tuple(checks),
+        warnings=tuple(warnings),
+        audit=AuditTrail(
+            app_version=__version__,
+            method=FEM_METHOD,
+            assumptions=_FEM_ASSUMPTIONS,
+            parameters=parameters,
+            input_hash=_input_hash(geometry, materials, loads, options),
+        ),
+    )
+
+
+def _fem_reaction_checks(fem: dict[str, float], m1: dict[str, float]) -> list[Check]:
+    """Validade do modelo: reação do MEF a menos de 1 % da do M1 em cada estaca (D14)."""
+    scale = max(abs(v) for v in m1.values())
+    return [
+        _fem_check(
+            f"mef_reacao_{pid}",
+            f"Reação da estaca {pid}: |MEF − M1| ≤ 1 % do M1",
+            abs(fem[pid] - m1[pid]) / max(abs(m1[pid]), 1e-9 * scale),
+            _FEM_REACTION_LIMIT,
+            "-",
+            _FEM_REF,
+        )
+        for pid in m1
+    ]
+
+
+def _fem_tie_checks(
+    geometry: GeometryInput, model: StrutTieModel, field: StressField
+) -> list[Check]:
+    """Tração do MEF em cada plano entre linhas de estacas ≤ 1,10 × tirantes do M5 (D14)."""
+    from blococalc.fem.post import section_tension  # noqa: PLC0415
+
+    cap = geometry.cap
+    piles = {p.id: (p.x, p.y) for p in geometry.piles}
+    cell = min(cap.lx, cap.ly, cap.h) / 50.0
+    checks = []
+    for axis, name, width in ((0, "x", cap.ly), (1, "y", cap.lx)):
+        lines = sorted({round(xy[axis], 3) for xy in piles.values()})
+        for a, b in itertools.pairwise(lines):
+            plane = (a + b) / 2.0
+            m5 = sum(
+                t.force_d * abs((t.dir_x, t.dir_y)[axis])
+                for t in model.ties
+                if min(piles[t.pile_a][axis], piles[t.pile_b][axis])
+                < plane
+                < max(piles[t.pile_a][axis], piles[t.pile_b][axis])
+            )
+            checks.append(
+                _fem_check(
+                    f"mef_tracao_{name}_{plane:.0f}",
+                    f"Tração no plano {name} = {plane:.0f} mm: MEF ≤ 1,10 × tirantes do M5",
+                    section_tension(field, axis, plane, (width, cap.h), cell),
+                    (1.0 + _FEM_TIE_LIMIT) * m5,
+                    "N",
+                    _FEM_REF,
+                )
+            )
+    return checks
+
+
+def _fem_node_checks(
+    geometry: GeometryInput,
+    model: StrutTieModel,
+    field: StressField,
+    strengths: StrutTieStrengths,
+    tie_height: float,
+) -> list[Check]:
+    """Média de −σ3 nos nós: pilar × y do M5 contra fcd1, estaca × 2·d′ contra fcd3 (D14)."""
+    from blococalc.fem.post import mean_compression  # noqa: PLC0415
+
+    h = geometry.cap.h
+    checks = [
+        _fem_check(
+            f"mef_no_pilar_{c.id}",
+            f"Nó do pilar {c.id}: média de −σ3 no MEF ≤ fcd1",
+            mean_compression(field, (c.x, c.y), (c.bx / 2, c.by / 2), (h - model.y, h)),
+            strengths.fcd1,
+            "MPa",
+            _FEM_NODE_REF,
+        )
+        for c in geometry.columns
+    ]
+    checks += [
+        _fem_check(
+            f"mef_no_estaca_{p.id}",
+            f"Nó da estaca {p.id}: média de −σ3 no MEF ≤ fcd3",
+            mean_compression(
+                field,
+                (p.x, p.y),
+                (p.size / 2, p.size / 2),
+                (0.0, 2.0 * tie_height),
+                circular=p.shape is PileShape.CIRCULAR,
+            ),
+            strengths.fcd3,
+            "MPa",
+            _FEM_NODE_REF,
+        )
+        for p in geometry.piles
+    ]
+    return checks
+
+
+def _fem_check(  # noqa: PLR0913, PLR0917 - campos do Check
+    check_id: str, description: str, demand: float, capacity: float, unit: str, ref: Reference
+) -> Check:
+    return Check(
+        id=check_id,
+        description=description,
+        demand=demand,
+        capacity=capacity,
+        unit=unit,
+        status=CheckStatus.OK if demand <= capacity else CheckStatus.WARNING,
+        reference=ref,
+    )
 
 
 def _space_truss_comparison(
