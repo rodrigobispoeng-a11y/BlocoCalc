@@ -39,3 +39,16 @@ def test_pure_subpackages_only_share_schemas(subpackage: str) -> None:
     for path in (PACKAGE / subpackage).rglob("*.py"):
         for module in imported_modules(path):
             assert not module.startswith(others), f"{path.relative_to(PACKAGE)} importa {module}"
+
+
+def test_viz_only_knows_schemas_and_no_qt() -> None:
+    # ADR-006: a cena é montada sem janela; só a tela (app) conhece Qt e pyvistaqt.
+    for path in (PACKAGE / "viz").rglob("*.py"):
+        for module in imported_modules(path):
+            if module.startswith("blococalc."):
+                assert module == "blococalc.schemas", (
+                    f"{path.relative_to(PACKAGE)} importa {module}"
+                )
+            assert not module.startswith(("PySide6", "pyvistaqt", "qtpy")), (
+                f"{path.relative_to(PACKAGE)} importa {module}"
+            )

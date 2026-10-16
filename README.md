@@ -16,7 +16,7 @@ detalhamento e primeira tela PySide6. Bloco flexível e vários pilares em andam
 ## Desenvolvimento
 
 ```bash
-python -m pip install -e ".[dev,app,fem]"
+python -m pip install -e ".[dev,app,fem,viz]"
 make check   # ruff + mypy --strict + pytest
 python -m blococalc.app   # abre a tela (ou o comando blococalc)
 ```
