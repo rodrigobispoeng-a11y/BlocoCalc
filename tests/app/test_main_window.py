@@ -414,6 +414,31 @@ def test_all_contract_fields_are_editable(app: object) -> None:
     assert window.inputs() == (geometry, materials, loads, detailing)
 
 
+def test_pile_stiffness_is_edited_in_kn_per_mm(app: object) -> None:
+    # D16: coluna k [kN/mm] sem valor padrão; vazia = apoio rígido no MEF.
+    window = MainWindow()
+    header = window.piles.horizontalHeaderItem(5)
+    assert header is not None and header.text() == "k [kN/mm]"
+    assert "Ecs·A/L" in header.toolTip()
+    assert all(p.axial_stiffness is None for p in window.inputs()[0].piles)
+    cell = window.piles.item(0, 5)
+    assert cell is not None
+    cell.setText("720")
+    geometry = window.inputs()[0]
+    assert geometry.piles[0].axial_stiffness == pytest.approx(720e3)
+    assert geometry.piles[1].axial_stiffness is None
+    window.set_project(window.project())
+    assert window.inputs()[0] == geometry
+    item = window.piles.item(0, 5)
+    assert item is not None and item.text() == "720.0"
+    cell = window.piles.item(1, 5)
+    assert cell is not None
+    cell.setText("0")
+    window.calculate()
+    assert window.result is None
+    assert "axial_stiffness" in window.status.text() or "rigidez" in window.status.text()
+
+
 def test_unknown_pile_shape_is_reported(app: object) -> None:
     window = MainWindow()
     cell = window.piles.item(0, 4)

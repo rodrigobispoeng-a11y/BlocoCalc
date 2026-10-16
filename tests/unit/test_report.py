@@ -86,3 +86,15 @@ def test_fem_section_only_with_fem_result() -> None:
 def test_report_needs_a_result() -> None:
     with pytest.raises(ValueError, match="Calcule"):
         calculation_report(project(result=None), ISSUED)
+
+
+def test_pile_table_shows_stiffness() -> None:
+    # D16: rigidez em kN/mm; estaca sem rigidez aparece como apoio rígido.
+    geometry = four_pile_cap()
+    piles = (geometry.piles[0].model_copy(update={"axial_stiffness": 720e3}), *geometry.piles[1:])
+    html = calculation_report(
+        project(geometry=geometry.model_copy(update={"piles": piles})), ISSUED
+    )
+    assert "k [kN/mm]" in html
+    assert "<td>720.0</td>" in html
+    assert html.count("<td>rígida</td>") == 3
