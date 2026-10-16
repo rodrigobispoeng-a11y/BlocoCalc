@@ -2,21 +2,29 @@
 
 from __future__ import annotations
 
+import functools
 import os
+import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
-from blococalc.analysis import refresh_project  # noqa: E402
+from blococalc.analysis import (  # noqa: E402
+    FEM_METHOD,
+    analyze,
+    fem_verification,
+    refresh_project,
+)
 from blococalc.app import __main__ as entry  # noqa: E402
 from blococalc.app import main_window  # noqa: E402
 from blococalc.app.main_window import KN, MainWindow, _append_row  # noqa: E402
 from blococalc.persistence.project import load_project, save_project  # noqa: E402
-from blococalc.schemas import MaterialsInput, Project  # noqa: E402
+from blococalc.schemas import AnalysisResult, MaterialsInput, Project  # noqa: E402
 from tests.factories import quincunx_cap  # noqa: E402
 
 Button = QtWidgets.QMessageBox.StandardButton
@@ -258,3 +266,85 @@ def test_open_from_menu(app: object, dialogs: FakeDialogs, tmp_path: Path) -> No
     actions["&Abrir..."].trigger()
     assert window.materials["fck"].value() == 45.0
     assert isinstance(window.project(), Project)
+
+
+def wait_fem(window: MainWindow) -> None:
+    deadline = time.monotonic() + 120.0
+    while window.fem_running:
+        assert time.monotonic() < deadline, "MEF não terminou"
+        QtWidgets.QApplication.processEvents()
+        time.sleep(0.01)
+
+
+def fake_fem(*inputs: Any) -> AnalysisResult:
+    result = analyze(*inputs)
+    return result.model_copy(
+        update={"audit": result.audit.model_copy(update={"method": FEM_METHOD})}
+    )
+
+
+def test_fem_runs_in_background_and_is_saved(
+    app: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(main_window, "fem_verification", fake_fem)
+    window = MainWindow()
+    window.fem_button.click()
+    assert not window.form_area.isEnabled()
+    wait_fem(window)
+    assert window.form_area.isEnabled()
+    assert window.fem_result is not None
+    assert window.fem_table.rowCount() == len(window.fem_result.checks)
+    assert FEM_METHOD in window.fem_summary.toPlainText()
+    assert window.status.text().startswith("MEF concluído")
+    assert window.isWindowModified()
+
+    assert window.save_to(tmp_path / "b1.bloco")
+    other = MainWindow()
+    assert other.open_path(tmp_path / "b1.bloco")
+    assert other.fem_result == window.fem_result
+    assert other.fem_table.rowCount() == len(window.fem_result.checks)
+
+
+def test_fem_failure_is_shown(app: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    def missing_ccx(*_: object) -> AnalysisResult:
+        # Mesma mensagem de blococalc.fem.ccx.FemError, sem exigir o gmsh nos testes da tela.
+        raise RuntimeError("CalculiX não encontrado (parâmetro, BLOCOCALC_CCX ou PATH)")
+
+    monkeypatch.setattr(main_window, "fem_verification", missing_ccx)
+    window = MainWindow()
+    window.run_fem()
+    wait_fem(window)
+    assert window.fem_result is None
+    assert window.form_area.isEnabled()
+    assert "BLOCOCALC_CCX" in window.status.text()
+
+
+def test_editing_inputs_discards_fem_result(app: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(main_window, "fem_verification", fake_fem)
+    window = MainWindow()
+    window.run_fem()
+    wait_fem(window)
+    window.name.setText("Outro nome")  # nome não muda o cálculo
+    assert window.fem_result is not None
+    window.cap["h"].setValue(1100.0)
+    assert window.fem_result is None
+    assert window.fem_table.rowCount() == 0
+    assert "MEF foi descartado" in window.status.text()
+
+
+@pytest.mark.fem
+def test_real_fem_from_the_screen(app: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("gmsh")
+    from blococalc.fem.ccx import find_ccx  # noqa: PLC0415 - exige o gmsh
+
+    if find_ccx() is None:
+        pytest.skip("CalculiX (ccx) não instalado")
+    monkeypatch.setattr(
+        main_window, "fem_verification", functools.partial(fem_verification, mesh_size=300.0)
+    )
+    window = MainWindow()
+    window.run_fem()
+    wait_fem(window)
+    assert window.fem_result is not None, window.status.text()
+    assert window.fem_result.audit.method == FEM_METHOD
+    assert len(window.fem_result.reactions) == 4

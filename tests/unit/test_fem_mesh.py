@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 import pytest
 
@@ -80,3 +82,12 @@ def test_square_piles_are_meshed() -> None:
     mesh = mesh_cap(square, 250.0)
     xyz = mesh.nodes[mesh.pile_nodes["E1"]]
     assert np.abs(xyz[:, :2] - (-600.0, -600.0)).max() == pytest.approx(200.0)
+
+
+def test_mesh_runs_outside_the_main_thread() -> None:
+    # A tela roda o MEF em segundo plano; o gmsh não pode instalar tratador de sinal ali.
+    meshes: list[CapMesh] = []
+    worker = threading.Thread(target=lambda: meshes.append(mesh_cap(four_pile_cap(), 300.0)))
+    worker.start()
+    worker.join()
+    assert len(meshes) == 1
