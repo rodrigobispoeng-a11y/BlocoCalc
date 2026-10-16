@@ -122,6 +122,16 @@ _FEM_ASSUMPTIONS = (
     "Nós: média de −σ3 no prisma pilar × y do M5 (fcd1) e no volume estaca × 2·d′ (fcd3).",
     "Comparação apenas: o dimensionamento continua pelo M5.",
 )
+_FEM_SPRING_LIMIT = 0.10  # D16: alerta de reação com molas
+_FEM_SPRING_REF = Reference(source="docs/02-metodos.md", item="§4.7, D16")
+_FEM_SPRING_ASSUMPTION = (
+    "Estacas com rigidez: cabeça rígida sobre mola axial k (D16); sem rigidez: apoio vertical "
+    "rígido na área da cabeça; vinculação horizontal isostática (D14)."
+)
+_MIXED_SUPPORTS_WARNING = (
+    "Estacas com e sem rigidez no MEF (D16): as sem rigidez ficam como apoio rígido e tendem a "
+    "concentrar carga."
+)
 _CORNER_PILES_WARNING = (
     "Bloco flexível: punção e cisalhamento junto às estacas de canto e de borda não são "
     "verificados pelo programa (D9); conferir com modelo 3D."
@@ -379,7 +389,11 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
         "Ecs_MPa": solver.secant_modulus(materials.fck),
         "poisson": solver.POISSON,
     }
+    stiffness = {p.id: p.axial_stiffness for p in geometry.piles if p.axial_stiffness is not None}
+    parameters |= {f"k_{pid}_N_mm": k for pid, k in stiffness.items()}
     warnings: list[str] = []
+    if stiffness and len(stiffness) < len(geometry.piles):
+        warnings.append(_MIXED_SUPPORTS_WARNING)
     reactions: list[PileReaction] = []
     if not rigid:
         warnings.append(
@@ -393,9 +407,9 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
         factor = loads.gamma_n * (1.0 + ratio)
         for case in loads.cases:
             forces = column_nodal_forces(mesh, columns, list(case.column_loads), factor)
-            result = solver.solve(mesh, forces, materials.fck, ccx)
+            result = solver.solve(mesh, forces, materials.fck, ccx, stiffness)
             field = post.StressField(mesh, result)
-            fem = post.pile_reactions(mesh, result)
+            fem = post.pile_reactions(mesh, result, stiffness)
             reactions += [PileReaction(pile_id=k, case_id=case.id, force=v) for k, v in fem.items()]
             # M1 com a mesma carga do MEF (D7 junto com os pilares) para validar o modelo.
             m1 = {r.pile_id: factor * r.force for r in rigid_cap_reactions(geometry, case)}
@@ -407,12 +421,14 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
                 loads.gamma_n,
                 tie_height,
             )
-            case_checks = [*_fem_reaction_checks(fem, m1), *_fem_tie_checks(geometry, model, field)]
+            reaction_checks = (
+                _fem_spring_checks(fem, m1) if stiffness else _fem_reaction_checks(fem, m1)
+            )
+            case_checks = [*reaction_checks, *_fem_tie_checks(geometry, model, field)]
             case_checks += _fem_node_checks(geometry, model, field, strengths, tie_height)
             checks += _tag(case.id, case_checks)
             warnings += [
-                f"Caso {case.id}: {c.description} não atendida pelo MEF "
-                f"({c.demand:.4g} contra {c.capacity:.4g} {c.unit})."
+                _fem_warning(case.id, c, bool(stiffness))
                 for c in case_checks
                 if c.status is not CheckStatus.OK
             ]
@@ -424,7 +440,7 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
         audit=AuditTrail(
             app_version=__version__,
             method=FEM_METHOD,
-            assumptions=_FEM_ASSUMPTIONS,
+            assumptions=_fem_assumptions(bool(stiffness)),
             parameters=parameters,
             input_hash=_input_hash(geometry, materials, loads, options),
         ),
@@ -535,6 +551,41 @@ def _fem_reaction_checks(fem: dict[str, float], m1: dict[str, float]) -> list[Ch
         )
         for pid in m1
     ]
+
+
+def _fem_spring_checks(fem: dict[str, float], m1: dict[str, float]) -> list[Check]:
+    """Com molas, a reação do MEF é comparação: alerta acima de 1,10 × M1 (D16)."""
+    return [
+        _fem_check(
+            f"mef_reacao_{pid}",
+            f"Reação da estaca {pid} com molas: MEF ≤ 1,10 × M1",
+            fem[pid],
+            m1[pid] + _FEM_SPRING_LIMIT * abs(m1[pid]),
+            "N",
+            _FEM_SPRING_REF,
+        )
+        for pid in m1
+    ]
+
+
+def _fem_warning(case_id: str, check: Check, springs: bool) -> str:
+    if springs and check.id.startswith("mef_reacao_"):
+        pid = check.id.removeprefix("mef_reacao_")
+        return (
+            f"Caso {case_id}: M1 subestima a reação da estaca {pid} ({check.demand / 1e3:.0f} kN "
+            f"pelo MEF com molas, limite {check.capacity / 1e3:.0f} kN = 1,10 × M1; D16)."
+        )
+    return (
+        f"Caso {case_id}: {check.description} não atendida pelo MEF "
+        f"({check.demand:.4g} contra {check.capacity:.4g} {check.unit})."
+    )
+
+
+def _fem_assumptions(springs: bool) -> tuple[str, ...]:
+    if not springs:
+        return _FEM_ASSUMPTIONS
+    first, _supports, *rest = _FEM_ASSUMPTIONS
+    return (first, _FEM_SPRING_ASSUMPTION, *rest)
 
 
 def _fem_tie_checks(
