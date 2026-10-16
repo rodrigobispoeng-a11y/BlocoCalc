@@ -14,6 +14,7 @@ pytest.importorskip("gmsh")
 
 from blococalc.fem.ccx import (
     FemError,
+    FemResult,
     find_ccx,
     horizontal_supports,
     input_deck,
@@ -23,6 +24,7 @@ from blococalc.fem.ccx import (
 )
 from blococalc.fem.loads import column_nodal_forces
 from blococalc.fem.mesh import CapMesh, mesh_cap
+from blococalc.fem.post import pile_reactions
 from blococalc.schemas import ColumnLoad, GeometryInput
 from tests.factories import four_pile_cap
 
@@ -61,6 +63,36 @@ def test_input_deck_lists_supports_and_loads(b1: tuple[GeometryInput, CapMesh]) 
     assert "PILE3,3,3,0" in deck
     assert "\n1,3,-5.000000\n" in deck
     assert deck.count("*ELEMENT") == 1
+
+
+def test_input_deck_puts_springs_under_rigid_heads(b1: tuple[GeometryInput, CapMesh]) -> None:
+    # D16: cabeça rígida (uz dos nós da cabeça = uz do nó de referência) sobre uma mola k.
+    _, mesh = b1
+    deck = input_deck(mesh, np.zeros_like(mesh.nodes), 29403.0, {"E1": 720e3})
+    head = mesh.pile_nodes["E1"]
+    ref = len(mesh.nodes) + 1
+    assert "PILE0,3,3,0" not in deck and "PILE1,3,3,0" in deck
+    assert deck.count("*EQUATION") == len(head)
+    assert f"\n{head[0] + 1},3,1.0,{ref},3,-1.0\n" in deck
+    assert "*ELEMENT, TYPE=SPRING1, ELSET=MOLA0" in deck
+    assert f"\n{len(mesh.tets) + 1},{ref}\n" in deck
+    assert "*SPRING, ELSET=MOLA0\n3,\n7.200000E+05\n" in deck
+    assert f"\n{ref},1,2,0\n" in deck
+    with pytest.raises(ValueError, match="E9"):
+        input_deck(mesh, np.zeros_like(mesh.nodes), 29403.0, {"E9": 1.0})
+
+
+def test_spring_pile_reaction_is_k_times_settlement(b1: tuple[GeometryInput, CapMesh]) -> None:
+    _, mesh = b1
+    n = len(mesh.nodes)
+    displacements = np.zeros((n, 3))
+    displacements[mesh.pile_nodes["E1"], 2] = -0.5
+    reactions = np.zeros((n, 3))
+    reactions[mesh.pile_nodes["E2"], 2] = 1e3
+    result = FemResult(displacements, np.zeros((n, 6)), reactions)
+    found = pile_reactions(mesh, result, {"E1": 720e3})
+    assert found["E1"] == pytest.approx(360e3)
+    assert found["E2"] == pytest.approx(1e3 * len(mesh.pile_nodes["E2"]))
 
 
 def test_read_frd_parses_fixed_columns() -> None:
@@ -113,3 +145,19 @@ def test_b1_reactions_match_rigid_cap(b1: tuple[GeometryInput, CapMesh]) -> None
     assert result.reactions[supported, 0].sum() == pytest.approx(-factor * 50e3, rel=1e-6)
     assert abs(result.reactions[supported, 1].sum()) < 1e-6 * factor * 980e3
     assert float(np.min(result.displacements[:, 2])) < 0.0
+
+
+@pytest.mark.fem
+@needs_ccx
+def test_springs_share_the_load(b1: tuple[GeometryInput, CapMesh]) -> None:
+    # Carga centrada e molas iguais: cada estaca recalca N/(4·k) e leva N/4.
+    geometry, mesh = b1
+    load = ColumnLoad(column_id="P1", n=980e3)
+    forces = column_nodal_forces(mesh, {"P1": geometry.columns[0]}, [load], 1.0)
+    stiffness = {p.id: 200e3 for p in geometry.piles}
+    result = solve(mesh, forces, 35.0, stiffness=stiffness)
+    found = pile_reactions(mesh, result, stiffness)
+    assert list(found.values()) == pytest.approx([245e3] * 4, rel=1e-3)
+    head = mesh.pile_nodes["E1"]
+    assert np.ptp(result.displacements[head, 2]) < 1e-9
+    assert result.displacements[head[0], 2] == pytest.approx(-245e3 / 200e3, rel=1e-3)

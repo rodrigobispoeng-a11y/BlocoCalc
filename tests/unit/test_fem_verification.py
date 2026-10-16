@@ -26,7 +26,7 @@ from blococalc.schemas import (
     LoadsInput,
     MaterialsInput,
 )
-from tests.factories import four_pile_cap
+from tests.factories import four_pile_cap, quincunx_cap
 
 needs_ccx = pytest.mark.skipif(find_ccx() is None, reason="CalculiX (ccx) não instalado")
 
@@ -94,6 +94,53 @@ def test_flexible_cap_is_not_analysed() -> None:
     assert result.reactions == ()
     assert "só confere o M5 de blocos rígidos" in result.warnings[0]
     assert result.audit.method == FEM_METHOD
+
+
+def test_mixed_supports_warn() -> None:
+    # D16: estacas com e sem rigidez no mesmo bloco; o aviso sai antes de qualquer cálculo.
+    geometry = four_pile_cap()
+    piles = (geometry.piles[0].model_copy(update={"axial_stiffness": 500e3}), *geometry.piles[1:])
+    flexible = geometry.model_copy(
+        update={"piles": piles, "cap": Cap(lx=2000.0, ly=2000.0, h=500.0, pile_embedment=100.0)}
+    )
+    result = fem_verification(flexible, MaterialsInput(fck=25.0), loads(), ccx="ccx-inexistente")
+    assert any("com e sem rigidez" in w for w in result.warnings)
+    assert result.audit.parameters["k_E1_N_mm"] == 500e3
+    assert "k_E2_N_mm" not in result.audit.parameters
+
+
+@pytest.mark.fem
+@needs_ccx
+def test_b7_with_springs_compares_reactions_with_m1() -> None:
+    # §4.7: com k = 720 kN/mm a estaca central leva cerca de 4 % a mais que o M1 (2000 kN sem
+    # γn); com γn e D7 em ambos os lados, a razão se mantém. A soma bate com a carga.
+    base = quincunx_cap()
+    piles = tuple(p.model_copy(update={"axial_stiffness": 720e3}) for p in base.piles)
+    geometry = base.model_copy(update={"piles": piles})
+    result = fem_verification(geometry, MaterialsInput(fck=30.0), loads(10_000e3), mesh_size=300.0)
+    factor = 1.2
+    forces = {r.pile_id: r.force for r in result.reactions}
+    assert sum(forces.values()) == pytest.approx(factor * 10_000e3, rel=1e-6)
+    assert forces["E5"] / (factor * 2000e3) == pytest.approx(1.04, abs=0.015)
+    checks = {c.id.removeprefix("ELU1:"): c for c in result.checks}
+    reaction = checks["mef_reacao_E5"]
+    assert reaction.unit == "N"
+    assert reaction.capacity == pytest.approx(1.1 * factor * 2000e3)
+    assert reaction.status is CheckStatus.OK
+    assert not any("subestima" in w for w in result.warnings)
+    assert result.audit.parameters["k_E5_N_mm"] == 720e3
+    assert any("mola" in a for a in result.audit.assumptions)
+
+
+@pytest.mark.fem
+@needs_ccx
+def test_stiff_springs_warn_that_m1_underestimates() -> None:
+    # k = 20 000 kN/mm: quase rígido, a estaca central passa o M1 em mais de 10 %.
+    base = quincunx_cap()
+    piles = tuple(p.model_copy(update={"axial_stiffness": 20e6}) for p in base.piles)
+    geometry = base.model_copy(update={"piles": piles})
+    result = fem_verification(geometry, MaterialsInput(fck=30.0), loads(10_000e3), mesh_size=300.0)
+    assert any("M1 subestima a reação da estaca E5" in w for w in result.warnings)
 
 
 @pytest.mark.fem

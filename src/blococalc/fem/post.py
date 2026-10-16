@@ -7,6 +7,8 @@ compressão nos volumes dos nós. Tensões em MPa, forças em N, comprimentos em
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import numpy as np
 from scipy.interpolate import LinearNDInterpolator
 
@@ -40,9 +42,23 @@ class StressField:
         return values
 
 
-def pile_reactions(mesh: CapMesh, result: FemResult) -> dict[str, float]:
-    """Reação vertical de cada estaca, positiva em compressão [N]."""
-    return {pid: float(result.reactions[nodes, 2].sum()) for pid, nodes in mesh.pile_nodes.items()}
+def pile_reactions(
+    mesh: CapMesh, result: FemResult, stiffness: Mapping[str, float] | None = None
+) -> dict[str, float]:
+    """Reação vertical de cada estaca, positiva em compressão [N].
+
+    Apoio rígido: soma das reações nodais da cabeça. Mola (D16): −k·uz da cabeça rígida, porque
+    o CalculiX não devolve reação nos nós ligados por equação.
+    """
+    springs = stiffness or {}
+    return {
+        pid: (
+            -springs[pid] * float(result.displacements[nodes, 2].mean())
+            if pid in springs
+            else float(result.reactions[nodes, 2].sum())
+        )
+        for pid, nodes in mesh.pile_nodes.items()
+    }
 
 
 def section_tension(

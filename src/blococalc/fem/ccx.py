@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,15 +50,21 @@ def find_ccx(ccx: str | None = None) -> str | None:
     return shutil.which(candidate)
 
 
-def solve(mesh: CapMesh, forces: FloatArray, fck: float, ccx: str | None = None) -> FemResult:
-    """Resolve o bloco elástico linear com apoios verticais nas estacas."""
+def solve(
+    mesh: CapMesh,
+    forces: FloatArray,
+    fck: float,
+    ccx: str | None = None,
+    stiffness: Mapping[str, float] | None = None,
+) -> FemResult:
+    """Resolve o bloco elástico linear apoiado nas estacas (rígidas ou em molas, D16)."""
     executable = find_ccx(ccx)
     if executable is None:
         raise FemError(f"CalculiX não encontrado (parâmetro, {CCX_ENV} ou PATH)")
     with tempfile.TemporaryDirectory(prefix="blococalc-") as folder:
         job = Path(folder) / "bloco"
         job.with_suffix(".inp").write_text(
-            input_deck(mesh, forces, secant_modulus(fck)), encoding="ascii"
+            input_deck(mesh, forces, secant_modulus(fck), stiffness), encoding="ascii"
         )
         run = subprocess.run(
             [executable, "-i", job.name], cwd=folder, capture_output=True, text=True, check=False
@@ -68,15 +75,45 @@ def solve(mesh: CapMesh, forces: FloatArray, fck: float, ccx: str | None = None)
         return read_frd(frd.read_text(encoding="ascii", errors="replace"), len(mesh.nodes))
 
 
-def input_deck(mesh: CapMesh, forces: FloatArray, modulus: float) -> str:
-    """Arquivo .inp: nós numerados a partir de 1 na ordem de `mesh.nodes`."""
+def input_deck(
+    mesh: CapMesh,
+    forces: FloatArray,
+    modulus: float,
+    stiffness: Mapping[str, float] | None = None,
+) -> str:
+    """Arquivo .inp: nós numerados a partir de 1 na ordem de `mesh.nodes`.
+
+    Estacas sem rigidez em `stiffness` [N/mm] ficam com apoio vertical rígido (D14). As com
+    rigidez têm a cabeça rígida, com o uz de cada nó da cabeça igual ao de um nó de referência
+    no centro dela, e esse nó sobre uma mola SPRING1 vertical (D16, docs/02-metodos.md §4.7).
+    """
+    springs = dict(stiffness or {})
+    unknown = set(springs) - set(mesh.pile_nodes)
+    if unknown:
+        raise ValueError(f"Rigidez de estacas inexistentes na malha: {sorted(unknown)}")
+    n_nodes = len(mesh.nodes)
+    references = {pid: n_nodes + k + 1 for k, pid in enumerate(mesh.pile_nodes) if pid in springs}
     lines = ["*NODE, NSET=NALL"]
     lines += [f"{i + 1},{x:.6f},{y:.6f},{z:.6f}" for i, (x, y, z) in enumerate(mesh.nodes)]
+    for pid, ref in references.items():
+        x, y, z = mesh.nodes[mesh.pile_nodes[pid]].mean(axis=0)
+        lines.append(f"{ref},{x:.6f},{y:.6f},{z:.6f}")
     lines.append("*ELEMENT, TYPE=C3D10, ELSET=EALL")
     lines += [f"{i + 1}," + ",".join(str(n + 1) for n in tet) for i, tet in enumerate(mesh.tets)]
     for k, nodes in enumerate(mesh.pile_nodes.values()):
         lines.append(f"*NSET, NSET=PILE{k}")
         lines += [str(n + 1) for n in nodes]
+    for k, (pid, ref) in enumerate(references.items()):
+        for node in mesh.pile_nodes[pid]:
+            lines += ["*EQUATION", "2", f"{node + 1},3,1.0,{ref},3,-1.0"]
+        # O CalculiX exige o grau de liberdade seguido de vírgula e a rigidez em notação E.
+        lines += [
+            f"*ELEMENT, TYPE=SPRING1, ELSET=MOLA{k}",
+            f"{len(mesh.tets) + k + 1},{ref}",
+            f"*SPRING, ELSET=MOLA{k}",
+            "3,",
+            f"{springs[pid]:.6E}",
+        ]
     lines += [
         "*MATERIAL, NAME=CONCRETO",
         "*ELASTIC",
@@ -86,7 +123,8 @@ def input_deck(mesh: CapMesh, forces: FloatArray, modulus: float) -> str:
         "*STATIC",
         "*BOUNDARY",
     ]
-    lines += [f"PILE{k},3,3,0" for k in range(len(mesh.pile_nodes))]
+    lines += [f"PILE{k},3,3,0" for k, pid in enumerate(mesh.pile_nodes) if pid not in references]
+    lines += [f"{ref},1,2,0" for ref in references.values()]
     lines += [f"{node + 1},{dof},{dof},0" for node, dof in horizontal_supports(mesh)]
     lines.append("*CLOAD")
     for i, row in enumerate(forces):
