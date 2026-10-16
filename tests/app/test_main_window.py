@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import functools
 import os
+import sys
 import time
+import types
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,9 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 
+from PySide6.QtGui import QGuiApplication  # noqa: E402
+from PySide6.QtWidgets import QWidget  # noqa: E402
+
 from blococalc.analysis import (  # noqa: E402
     FEM_METHOD,
     analyze,
@@ -21,8 +26,9 @@ from blococalc.analysis import (  # noqa: E402
     refresh_project,
 )
 from blococalc.app import __main__ as entry  # noqa: E402
-from blococalc.app import main_window  # noqa: E402
+from blococalc.app import main_window, view3d  # noqa: E402
 from blococalc.app.main_window import KN, MainWindow, _append_row, _check_rows  # noqa: E402
+from blococalc.app.view3d import View3D  # noqa: E402
 from blococalc.persistence.project import load_project, save_project  # noqa: E402
 from blococalc.schemas import (  # noqa: E402
     AnalysisResult,
@@ -468,3 +474,148 @@ def test_report_from_menu_adds_extension(app: object, dialogs: FakeDialogs, tmp_
     action = next(a for a in menu.actions() if a.text() == "Gerar &memorial (PDF)...")
     action.trigger()
     assert (tmp_path / "memorial.pdf").read_bytes().startswith(b"%PDF")
+
+
+# --------------------------------------------------------------------------------------
+# Aba 3D (ADR-006)
+# --------------------------------------------------------------------------------------
+
+
+class FakePlotter(QWidget):
+    """Faz o papel do QtInteractor sem OpenGL: guarda o que seria desenhado."""
+
+    def __init__(self, parent: object = None) -> None:
+        super().__init__()
+        self.meshes: dict[str, dict[str, Any]] = {}
+        self.views: list[str] = []
+        self.cleared = 0
+
+    def add_mesh(self, mesh: Any, **options: Any) -> None:
+        self.meshes[options["name"]] = {"mesh": mesh, **options}
+
+    def clear(self) -> None:
+        self.meshes.clear()
+        self.cleared += 1
+
+    def view_isometric(self) -> None:
+        self.views.append("iso")
+
+    def view_xy(self) -> None:
+        self.views.append("xy")
+
+    def view_xz(self) -> None:
+        self.views.append("xz")
+
+    def view_yz(self) -> None:
+        self.views.append("yz")
+
+
+def fake_factory(parent: object) -> tuple[FakePlotter, FakePlotter]:
+    plotter = FakePlotter(parent)
+    return plotter, plotter
+
+
+def calculated(h: float = 1000.0, cases: int = 2) -> Project:
+    window = MainWindow()
+    window.cap["h"].setValue(h)
+    for _ in range(cases - 1):
+        _append_row(window.loads, ("ELU2", "P1", 490.0, 0.0, 0.0, 0.0, 0.0, "normal"))
+    window.calculate()
+    window.modified = False
+    project = window.project()
+    window.close()
+    return project
+
+
+def test_3d_tab_without_display_explains_and_still_builds_the_scene(app: object) -> None:
+    window = MainWindow()
+    assert not window.view3d.available
+    assert window.view3d.note.text().startswith("Visualização 3D indisponível: esta sessão")
+    window.calculate()
+    assert window.view3d.case_box.count() == 1
+    assert window.view3d.scene is not None
+    names = {item.name for item in window.view3d.scene.items}
+    assert {"bloco", "pilar_P1", "estaca_E1", "biela_E1", "tirante_E1_E2"} <= names
+    assert window.view3d.note.text().startswith("Visualização 3D indisponível")
+
+
+def test_3d_tab_draws_the_selected_case(app: object) -> None:
+    view = View3D(fake_factory)
+    plotter = view.plotter
+    assert isinstance(plotter, FakePlotter)
+    view.show_project(calculated())
+    assert [view.case_box.itemText(i) for i in range(2)] == ["ELU1", "ELU2"]
+    assert "biela_E1" in plotter.meshes
+    assert plotter.meshes["bloco"]["opacity"] < 1.0
+    assert "Biela" in view.note.text()
+    first, cleared = view.scene, plotter.cleared
+    view.case_box.setCurrentText("ELU2")
+    assert plotter.cleared == cleared + 1
+    assert view.scene is not first
+    assert "biela_E1" in plotter.meshes
+    for label in ("Planta", "Frente", "Lateral", "Isométrica"):
+        view.view_buttons[label].click()
+    assert plotter.views[-4:] == ["xy", "xz", "yz", "iso"]
+
+
+def test_3d_tab_keeps_the_case_and_clears_without_result(app: object) -> None:
+    view = View3D(fake_factory)
+    project = calculated()
+    view.show_project(project)
+    view.case_box.setCurrentText("ELU2")
+    view.show_project(project)
+    assert view.case_box.currentText() == "ELU2"
+    view.show_project(project.model_copy(update={"result": None}))
+    assert view.scene is None
+    assert view.case_box.count() == 0
+    assert view.note.text() == "Calcule o bloco para ver o modelo em 3D."
+
+
+def test_3d_tab_on_a_flexible_cap_shows_only_reactions(app: object) -> None:
+    view = View3D(fake_factory)
+    view.show_project(calculated(h=400.0, cases=1))
+    assert view.note.text().startswith("Bloco flexível (D9)")
+    assert view.scene is not None
+    assert not [i for i in view.scene.items if i.name.startswith("biela_")]
+
+
+def test_3d_tab_reports_model_errors(app: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken(project: Project, case_id: str) -> None:
+        raise ValueError("estaqueamento fora do escopo")
+
+    monkeypatch.setattr(view3d, "strut_tie_layout", broken)
+    view = View3D(fake_factory)
+    view.show_project(calculated(cases=1))
+    assert view.note.text().endswith("estaqueamento fora do escopo")
+    assert view.scene is not None
+
+
+def test_interactor_needs_a_screen_and_pyvistaqt(
+    app: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = QtWidgets.QWidget()
+    with pytest.raises(RuntimeError, match="não tem tela"):
+        view3d.interactor(parent)
+    monkeypatch.setattr(QGuiApplication, "platformName", staticmethod(lambda: "windows"))
+    monkeypatch.setitem(sys.modules, "pyvistaqt", None)
+    with pytest.raises(RuntimeError, match="PyVista não instalado"):
+        view3d.interactor(parent)
+    monkeypatch.setitem(sys.modules, "pyvistaqt", types.SimpleNamespace(QtInteractor=FakePlotter))
+    widget, plotter = view3d.interactor(parent)
+    assert id(widget) == id(plotter)
+    assert isinstance(widget, FakePlotter)
+
+
+def test_3d_tab_is_cleared_when_the_form_is_invalid(
+    app: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    window = MainWindow()
+    window.calculate()
+    assert window.result is not None
+
+    def invalid() -> Project:
+        raise ValueError("tabela vazia")
+
+    monkeypatch.setattr(window, "project", invalid)
+    window._show(window.result)
+    assert window.view3d.scene is None

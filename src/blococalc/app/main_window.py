@@ -1,7 +1,7 @@
 """Primeira tela: entrada de um bloco com pilares, estacas e casos de carga em tabelas.
 
 Conversões de unidade só aqui (CLAUDE.md §4): a tela usa kN e kN·m; o motor, N e N·mm.
-A tela só conhece `blococalc.analysis`, `blococalc.persistence` e `blococalc.schemas`.
+A tela só conhece `analysis`, `persistence`, `report` e `schemas`; a aba 3D (ADR-006) usa `viz`.
 O menu Arquivo grava e abre projetos `.bloco` (ADR-004) e gera o memorial em PDF (ADR-005).
 A conferência por MEF (D14) roda em segundo plano, com o formulário bloqueado até terminar.
 """
@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
 )
 
 from blococalc.analysis import analyze, fem_verification, refresh_project
+from blococalc.app.view3d import View3D
 from blococalc.persistence.project import EXTENSION, ProjectFileError, load_project, save_project
 from blococalc.report import calculation_report
 from blococalc.schemas import (
@@ -190,6 +191,7 @@ class MainWindow(QMainWindow):
         self.reactions_table = QTableWidget()
         self.checks_table = QTableWidget()
         self.reinforcement_table = QTableWidget()
+        self.view3d = View3D()
         self.status = QLabel()
         self.status.setWordWrap(True)
 
@@ -258,6 +260,7 @@ class MainWindow(QMainWindow):
         fem_layout.addWidget(self.fem_summary, 1)
         fem_layout.addWidget(self.fem_table, 2)
         tabs.addTab(fem_tab, "MEF")
+        tabs.addTab(self.view3d, "3D")
         right = QVBoxLayout()
         right.addWidget(tabs)
         right.addWidget(self.status)
@@ -359,6 +362,10 @@ class MainWindow(QMainWindow):
         self.status.setText(self.result.disclaimer)
 
     def _show(self, result: AnalysisResult | None) -> None:
+        try:
+            self.view3d.show_project(self.project() if result is not None else None)
+        except ValueError:
+            self.view3d.show_project(None)
         if result is None:
             self.summary.clear()
             for table in (self.reactions_table, self.checks_table, self.reinforcement_table):
