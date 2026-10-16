@@ -276,7 +276,7 @@ Como a fonte usa outro braço e não equilibra a linha, o B2 não é teste de ig
 publicação: os goldens são os valores recalculados, e a geometria das bielas (Lproj, α) confere
 com a fonte a 0,1 %.
 
-## 4.5 Verificação por MEF (especificação, D14 proposta)
+## 4.5 Verificação por MEF (especificação, D14 aprovada)
 
 Objetivo: conferir por elementos finitos o modelo de bielas e tirantes (M5) dos blocos rígidos,
 como o M7 confere o pilar fictício. O dimensionamento continua pelo M5; o MEF gera verificações
@@ -284,7 +284,7 @@ de comparação e alertas. Fontes: Macedo (2022), cap. 7 (ANSYS, análise linear
 armadura, cargas como tensões nos pilares, estacas como apoios distribuídos na área da estaca);
 Bavaresco (2016), cap. 3 (SAP2000, análise linear, tração no fundo integrada em cortes verticais).
 
-**Especificação proposta (D14).**
+**Especificação (D14).**
 
 | Etapa | Regra | Fonte |
 |---|---|---|
@@ -356,7 +356,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D11 | Armadura de suspensão (22.7.4.1.3): sem método de cálculo na norma nem nas referências; o programa mantém o alerta e o item de área zero no resultado | Aprovada (Rodrigo, 13/10/2026) |
 | D12 | Treliça 3D (M7) para confrontar D10: ótimo de `Σ Ft·lt` (Gomes eq. 3.7) por programa linear sobre todas as ligações, com planos e reações iguais aos do M5, verificações de cruzamento e inclinação depois do ótimo, e alerta quando o pilar fictício dá menos tração que o M7; adiciona numpy e scipy (§4.3) | Aprovada (Rodrigo, 13/10/2026) |
 | D13 | M5 para N estacas em grade retangular: pilar dividido em nx × ny partes, tirantes por linha e coluna com força por equilíbrio dos nós, face do nó D6 espraiada a 45° em todos os blocos (§4.4) | Aprovada (Rodrigo, 13/10/2026) |
-| D14 | Verificação por MEF linear (gmsh + CalculiX) dos blocos rígidos: apoios rígidos nas áreas das estacas, cargas como pressão nos pilares, tração nos planos entre linhas de estacas contra o M5 (alerta acima de 10 %) e tensão média nos nós contra fcd1/fcd3; só comparação, sob demanda (§4.5) | Proposta (Claude); aguarda Rodrigo |
+| D14 | Verificação por MEF linear (gmsh + CalculiX) dos blocos rígidos: apoios rígidos nas áreas das estacas, cargas como pressão nos pilares, tração nos planos entre linhas de estacas contra o M5 (alerta acima de 10 %) e tensão média nos nós contra fcd1/fcd3; só comparação, sob demanda (§4.5) | Aprovada (Rodrigo, 16/10/2026) |
 
 ## 7. Ainda falta neste documento
 
