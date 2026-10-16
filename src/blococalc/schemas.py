@@ -1,4 +1,4 @@
-"""Contratos de dados entre módulos (schemas v3, ADR-002 e ADR-003).
+"""Contratos de dados entre módulos (schemas v4, ADR-002, ADR-003 e ADR-004).
 
 Unidades internas fixas: N, mm, MPa. Conversões acontecem só nas bordas (UI e importação).
 Estes modelos são o único formato que atravessa a fronteira entre subpacotes. Mudanças
@@ -12,8 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION: Literal["3"] = "3"
-_READABLE_VERSIONS = ("1", "2", "3")
+SCHEMA_VERSION: Literal["4"] = "4"
+_READABLE_VERSIONS = ("1", "2", "3", "4")
 
 
 class _Contract(BaseModel):
@@ -23,9 +23,9 @@ class _Contract(BaseModel):
 
 
 class _Versioned(_Contract):
-    """Contrato de topo. Lê v1 e v2: as versões novas só acrescentam campos e valores."""
+    """Contrato de topo. Lê v1 a v3: as versões novas só acrescentam campos e valores."""
 
-    schema_version: Literal["3"] = SCHEMA_VERSION
+    schema_version: Literal["4"] = SCHEMA_VERSION
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -247,3 +247,25 @@ class AnalysisResult(_Versioned):
     disclaimer: str = (
         "Resultado de apoio ao projeto. Exige revisão por engenheiro habilitado antes de uso."
     )
+
+
+# --------------------------------------------------------------------------------------
+# Projeto salvo (ADR-004)
+# --------------------------------------------------------------------------------------
+
+
+class Project(_Versioned):
+    """Arquivo de projeto `.bloco`: entradas e cópias dos últimos resultados (ADR-004).
+
+    Os resultados não são fonte de cálculo: só valem se o `audit.input_hash` bater com as
+    entradas e o `audit.app_version` com o do programa (`analysis.refresh_project`).
+    """
+
+    name: str = Field(min_length=1, description="Nome do bloco ou da obra")
+    notes: str = ""
+    geometry: GeometryInput
+    materials: MaterialsInput
+    loads: LoadsInput
+    detailing: DetailingInput = Field(default_factory=DetailingInput)
+    result: AnalysisResult | None = None
+    fem_result: AnalysisResult | None = None

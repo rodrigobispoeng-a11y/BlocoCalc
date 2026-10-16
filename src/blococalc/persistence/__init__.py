@@ -1,1 +1,1 @@
-"""Persistência de projetos e resultados. Fase posterior."""
+"""Persistência de projetos e resultados (ADR-004)."""
