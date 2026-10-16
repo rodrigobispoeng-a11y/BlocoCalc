@@ -25,7 +25,7 @@ from blococalc.schemas import (
     ReinforcementKind,
 )
 from blococalc.standards.strength import strut_tie_strengths
-from tests.factories import four_pile_cap, node_depth, two_pile_cap
+from tests.factories import four_pile_cap, node_depth, quincunx_cap, two_pile_cap
 
 C35 = MaterialsInput(fck=35.0)
 
@@ -250,3 +250,14 @@ def test_input_hash_tracks_inputs() -> None:
     again = analyze(four_pile_cap(), C35, loads(980e3)).audit.input_hash
     other = analyze(four_pile_cap(), C35, loads(900e3)).audit.input_hash
     assert first == again != other
+
+
+def test_quincunx_by_d15_warns_about_the_center_pile() -> None:
+    result = analyze(quincunx_cap(), MaterialsInput(fck=25.0), loads(10_000e3), DetailingInput())
+    assert result.rigid
+    ids = {r.id for r in result.reinforcement}
+    assert {"tirante_E1_E2", "tirante_E1_E5"} <= ids
+    assert sum("Estacas internas sob o pilar (E5)" in w for w in result.warnings) == 1
+    # Nó da estaca central com 1,4 × R: R = 1,2 · 1,05 · 10 000 kN / 5, estaca 60 + 2·5,8 cm.
+    center = next(c for c in result.checks if c.id == "C1:no_estaca_E5")
+    assert center.demand == pytest.approx(1.4 * 1.2 * 1.05 * 2000e3 / 716.0**2)

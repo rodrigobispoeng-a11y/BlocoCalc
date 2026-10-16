@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from blococalc.schemas import Cap, Column, GeometryInput, Pile
+import math
+
+from blococalc.schemas import Cap, Column, GeometryInput, Pile, PileShape
 
 
 def four_pile_cap(h: float = 1000.0) -> GeometryInput:
@@ -72,4 +74,42 @@ def grid_cap(
         ),
         piles=piles,
         columns=(Column(id="P1", x=0.0, y=0.0, bx=column[0], by=column[1]),),
+    )
+
+
+def quincunx_cap() -> GeometryInput:
+    """B7: bloco B05P01 de Bavaresco (2016), 420×420×210 cm, 5 estacas 60×60 em quincôncio."""
+    corners = ((-1, -1), (1, -1), (1, 1), (-1, 1))
+    piles = (
+        *(
+            Pile(id=f"E{i + 1}", x=sx * 1600.0, y=sy * 1600.0, size=600.0, shape=PileShape.SQUARE)
+            for i, (sx, sy) in enumerate(corners)
+        ),
+        Pile(id="E5", x=0.0, y=0.0, size=600.0, shape=PileShape.SQUARE),
+    )
+    return GeometryInput(
+        cap=Cap(lx=4200.0, ly=4200.0, h=2100.0, pile_embedment=100.0),
+        piles=piles,
+        columns=(Column(id="P1", x=0.0, y=0.0, bx=1000.0, by=1000.0),),
+    )
+
+
+def polygon_cap(n: int, radius: float = 1000.0, center: bool = False) -> GeometryInput:
+    """Estacas φ400 nos vértices de um polígono regular (a primeira em +x), pilar 400×400 (D15)."""
+    piles = tuple(
+        Pile(
+            id=f"E{i + 1}",
+            x=radius * math.cos(2.0 * math.pi * i / n),
+            y=radius * math.sin(2.0 * math.pi * i / n),
+            size=400.0,
+        )
+        for i in range(n)
+    )
+    if center:
+        piles += (Pile(id=f"E{n + 1}", x=0.0, y=0.0, size=400.0),)
+    side = 2.0 * radius + 1000.0
+    return GeometryInput(
+        cap=Cap(lx=side, ly=side, h=1300.0, pile_embedment=100.0),
+        piles=piles,
+        columns=(Column(id="P1", x=0.0, y=0.0, bx=400.0, by=400.0),),
     )

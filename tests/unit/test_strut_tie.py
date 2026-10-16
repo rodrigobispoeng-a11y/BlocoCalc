@@ -140,24 +140,23 @@ def test_rejects_pile_in_tension() -> None:
         solve(two_pile_cap(), 100e3, my=200e6)
 
 
-def test_rejects_five_piles_out_of_grid() -> None:
+def test_five_piles_out_of_grid_follow_d15() -> None:
     base = four_pile_cap()
     geometry = base.model_copy(
         update={"piles": (*base.piles, Pile(id="E5", x=0.0, y=0.0, size=400.0))}
     )
-    with pytest.raises(UnsupportedLayoutError, match="grade retangular completa"):
-        solve(geometry, 980e3)
+    assert solve(geometry, 980e3).interior_piles == ("E5",)
 
 
-def test_rejects_interior_pile() -> None:
+def test_rejects_interior_pile_outside_column() -> None:
     piles = (
         Pile(id="E1", x=-800.0, y=-600.0, size=300.0),
         Pile(id="E2", x=800.0, y=-600.0, size=300.0),
         Pile(id="E3", x=0.0, y=800.0, size=300.0),
-        Pile(id="E4", x=0.0, y=-200.0, size=300.0),
+        Pile(id="E4", x=300.0, y=-200.0, size=300.0),
     )
     geometry = four_pile_cap().model_copy(update={"piles": piles})
-    with pytest.raises(UnsupportedLayoutError, match="E4 não está no contorno"):
+    with pytest.raises(UnsupportedLayoutError, match="E4 precisa estar sob o pilar"):
         santos_stucchi(geometry, _equal_reactions(geometry), C35, GAMMA_N, TIE_HEIGHT)
 
 
