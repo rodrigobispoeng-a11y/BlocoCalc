@@ -1,6 +1,6 @@
 # ADR-007 — Rigidez axial das estacas na entrada (schemas v5)
 
-- Status: proposta
+- Status: aceita (Rodrigo, 16/10/2026)
 - Contexto: a D16 (docs/02-metodos.md §4.7) troca os apoios rígidos do MEF por molas axiais
   nas estacas. A rigidez de cada estaca vem do projeto geotécnico e precisa ficar salva no
   projeto `.bloco` (ADR-004) junto com as outras entradas, para o MEF ser refeito com os mesmos

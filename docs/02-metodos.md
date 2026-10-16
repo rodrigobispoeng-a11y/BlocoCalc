@@ -386,7 +386,7 @@ A diferença é a mesma nos dois tirantes, (2400/2247)·(2000/1848,6) = 1,156, o
 a geometria das bielas é a da fonte. MEF da D14 no B7 (malha 210 mm): tração de 1837 kN no
 plano x = −800 mm, contra 3505 kN dos tirantes do M5 que o cruzam em qualquer das opções.
 
-## 4.7 Estacas como apoios elásticos no MEF (especificação, D16 proposta)
+## 4.7 Estacas como apoios elásticos no MEF (especificação, D16 aprovada)
 
 Objetivo: tornar a conferência por MEF (D14) útil nos blocos com estaca interna. Com apoios
 rígidos, a estaca sob o pilar atrai muito mais carga do que o M1 dá e a comparação é invalidada
@@ -461,7 +461,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D13 | M5 para N estacas em grade retangular: pilar dividido em nx × ny partes, tirantes por linha e coluna com força por equilíbrio dos nós, face do nó D6 espraiada a 45° em todos os blocos (§4.4) | Aprovada (Rodrigo, 13/10/2026) |
 | D14 | Verificação por MEF linear (gmsh + CalculiX) dos blocos rígidos: apoios rígidos nas áreas das estacas, cargas como pressão nos pilares, tração nos planos entre linhas de estacas contra o M5 (alerta acima de 10 %) e tensão média nos nós contra fcd1/fcd3; só comparação, sob demanda (§4.5) | Aprovada (Rodrigo, 16/10/2026) |
 | D15 | M5 para estacas fora de grade: contorno convexo com bielas da regra atual, estacas internas sob o pilar com biela vertical (4/5 generalizada) e nó verificado com 1,4 × R, tirantes metade no anel e metade radiais (opção B da §4.6) | Aprovada (Rodrigo, 16/10/2026) |
-| D16 | Estacas como apoios elásticos no MEF: rigidez axial opcional por estaca dada pelo usuário (sem valor padrão), cabeça rígida com mola; com molas, reações do MEF comparadas ao M1 com alerta acima de 10 % em vez do critério de validade de 1 % (§4.7, ADR-007) | Proposta |
+| D16 | Estacas como apoios elásticos no MEF: rigidez axial opcional por estaca dada pelo usuário (sem valor padrão), cabeça rígida com mola; com molas, reações do MEF comparadas ao M1 com alerta acima de 10 % em vez do critério de validade de 1 % (§4.7, ADR-007) | Aprovada (Rodrigo, 16/10/2026) |
 
 ## 7. Ainda falta neste documento
 
