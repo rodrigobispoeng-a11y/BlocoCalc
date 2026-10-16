@@ -76,8 +76,18 @@ def _inputs(project: Project) -> list[str]:
             ],
         ),
         _table(
-            ("Estaca", "x [mm]", "y [mm]", "φ ou lado [mm]", "Forma"),
-            [(p.id, _n(p.x), _n(p.y), _n(p.size), _SHAPES[p.shape.value]) for p in g.piles],
+            ("Estaca", "x [mm]", "y [mm]", "φ ou lado [mm]", "Forma", "k [kN/mm]"),
+            [
+                (
+                    p.id,
+                    _n(p.x),
+                    _n(p.y),
+                    _n(p.size),
+                    _SHAPES[p.shape.value],
+                    "rígida" if p.axial_stiffness is None else _n(p.axial_stiffness / KN),
+                )
+                for p in g.piles
+            ],
         ),
         _table(
             ("Pilar", "x [mm]", "y [mm]", "bx [mm]", "by [mm]", "ρ [%]"),

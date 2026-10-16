@@ -79,7 +79,13 @@ KNM = 1e6  # N·mm
 # Exemplo inicial: benchmark B1 (Macedo 2022, §6.1), Fd = 980 kN.
 _DEFAULT_PILES = (("E1", -600.0, -600.0), ("E2", 600.0, -600.0), ("E3", 600.0, 600.0),
                   ("E4", -600.0, 600.0))  # fmt: skip
-_PILE_HEADERS = ("Estaca", "x [mm]", "y [mm]", "φ ou lado [mm]", "Forma")
+_PILE_HEADERS = ("Estaca", "x [mm]", "y [mm]", "φ ou lado [mm]", "Forma", "k [kN/mm]")
+_STIFFNESS_HELP = (
+    "Rigidez axial da estaca para a conferência por MEF (D16), vinda do projeto geotécnico "
+    "(prova de carga ou análise de recalque). Vazia = apoio rígido. Não há valor normativo: "
+    "para estaca de ponta, k ≈ Ecs·A/L só do fuste é um limite superior; estacas de atrito "
+    "são mais flexíveis. Não altera as reações do M1."
+)
 _COLUMN_HEADERS = ("Pilar", "x [mm]", "y [mm]", "bx [mm]", "by [mm]", "ρ [%]")
 _LOAD_HEADERS = ("Caso", "Pilar", "Nd [kN]", "Mxd [kN·m]", "Myd [kN·m]", "Hxd [kN]", "Hyd [kN]",
                  "Combinação")  # fmt: skip
@@ -186,7 +192,12 @@ class MainWindow(QMainWindow):
         self.hooked.setChecked(True)
         self.self_weight = QCheckBox("Peso próprio do bloco (5 % da normal, D7)")
         self.self_weight.setChecked(True)
-        self.piles = _table(_PILE_HEADERS, [(*pile, 400.0, "circular") for pile in _DEFAULT_PILES])
+        self.piles = _table(
+            _PILE_HEADERS, [(*pile, 400.0, "circular", "") for pile in _DEFAULT_PILES]
+        )
+        stiffness_header = self.piles.horizontalHeaderItem(_PILE_HEADERS.index("k [kN/mm]"))
+        if stiffness_header is not None:
+            stiffness_header.setToolTip(_STIFFNESS_HELP)
         self.summary = QPlainTextEdit(readOnly=True)
         self.reactions_table = QTableWidget()
         self.checks_table = QTableWidget()
@@ -240,7 +251,7 @@ class MainWindow(QMainWindow):
 
         tables = (
             ("Pilares", self.columns, lambda n: (f"P{n}", 0.0, 0.0, 200.0, 200.0, _DEFAULT_RATIO)),
-            ("Estacas", self.piles, lambda n: (f"E{n}", 0.0, 0.0, 400.0, "circular")),
+            ("Estacas", self.piles, lambda n: (f"E{n}", 0.0, 0.0, 400.0, "circular", "")),
             ("Casos de cálculo (um pilar por linha)", self.loads,
              lambda n: ("ELU1", f"P{n}", 0.0, 0.0, 0.0, 0.0, 0.0, "normal")),
         )  # fmt: skip
@@ -302,8 +313,9 @@ class MainWindow(QMainWindow):
             cap=Cap(**{name: box.value() for name, box in self.cap.items()}),
             piles=tuple(
                 Pile(id=i, x=float(x), y=float(y), size=float(d),
-                     shape=_choice(shape, _SHAPES, f"forma da estaca {i}"))
-                for i, x, y, d, shape in _rows(self.piles)
+                     shape=_choice(shape, _SHAPES, f"forma da estaca {i}"),
+                     axial_stiffness=float(k) * KN if k else None)
+                for i, x, y, d, shape, k in _rows(self.piles)
             ),
             columns=tuple(
                 Column(id=i, x=float(x), y=float(y), bx=float(bx), by=float(by),
@@ -486,7 +498,8 @@ class MainWindow(QMainWindow):
             self.self_weight.setChecked(project.loads.include_cap_self_weight)
             geometry = project.geometry
             rows: tuple[tuple[QTableWidget, list[tuple[object, ...]]], ...] = (
-                (self.piles, [(p.id, p.x, p.y, p.size, _label(p.shape, _SHAPES))
+                (self.piles, [(p.id, p.x, p.y, p.size, _label(p.shape, _SHAPES),
+                               "" if p.axial_stiffness is None else p.axial_stiffness / KN)
                               for p in geometry.piles]),
                 (self.columns, [(c.id, c.x, c.y, c.bx, c.by,
                                  round(100.0 * c.reinforcement_ratio, 6))
