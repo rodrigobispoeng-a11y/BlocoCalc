@@ -319,6 +319,67 @@ externo; no Windows vem com o PrePoMax ou o pacote bConverged, e o caminho fica 
 No CI, o Ubuntu instala `calculix-ccx`; os testes do MEF ficam marcados e só rodam onde o `ccx`
 existe.
 
+## 4.6 M5 para estacas fora de grade (especificação, D15 proposta)
+
+Objetivo: levar o M5 a blocos de um pilar com estacas no contorno de um polígono convexo
+(pentágono, hexágono, quincôncio com a estaca central sob o pilar, hexágono com estaca central),
+que hoje são recusados com aviso. Fonte principal: Bavaresco (2016), cap. 2 a 5: bloco B05P01,
+420×420×210 cm, 4 estacas 60×60 nos vértices de um quadrado de 320 cm e uma no centro, pilar
+100×100, Nd = 10 000 kN, C25, analisado pela regra dos 4/5 de Blévot e Frémy e por MEF linear
+(SAP2000).
+
+**O que a fonte mostra.**
+- Regra clássica (Blévot e Frémy): o quincôncio é calculado como o bloco de 4 estacas com 4/5
+  da carga; a estaca central recebe 1/5 direto do pilar.
+- No MEF, a tração no fundo aparece nos dois caminhos: entre as estacas do contorno (≈ 1,5 MPa)
+  e nas diagonais, com o pico junto à estaca central (≈ 2 MPa). Armar só pelos lados ou só pelas
+  diagonais deixa uma das regiões só com a malha de 20 %. A fonte conclui que a regra dos 4/5 dá
+  a quantidade certa de aço (89,5 cm² entre 78,8 e 94,3 cm² do MEF) desde que metade vá para os
+  lados e metade para as diagonais.
+- A estaca central recebeu 27,6 % da carga no MEF (estacas de 1 m engastadas), 39 % acima da
+  média; a fonte recomenda folga de 40 % na verificação do nó dessa estaca.
+- No nosso protótipo do mesmo bloco, a treliça M7 com as bielas do M5 escolhe o anel; mas, para
+  polígonos regulares com empuxo radial, anel e tirantes radiais (diagonais) têm exatamente o
+  mesmo Σ F·l, de modo que o ótimo é empatado e o desempate é arbitrário. O MEF da D14 com apoios
+  rígidos põe 52 % da carga na estaca central, o que invalida a comparação MEF × M1 (alerta da
+  D14) e confirma que essa reação depende da rigidez das estacas.
+
+**Especificação (D15).**
+
+| Etapa | Regra | Fonte |
+|---|---|---|
+| Escopo | Um pilar; estacas do contorno formando polígono convexo (3 ou mais, sem três alinhadas); estacas internas só se o eixo estiver dentro da seção do pilar. Grades retangulares seguem a D13. Fileiras desencontradas, estacas internas fora do pilar e estacas alinhadas no contorno continuam bloqueadas com aviso | Bavaresco §2.3 |
+| Reações | M1, como hoje (estacas de mesma rigidez) | M1 |
+| Estacas internas | Biela vertical a partir do próprio eixo (regra dos 4/5 generalizada), sem tirante e sem limite de inclinação; nó do pilar com a parte da área proporcional à reação | Blévot e Frémy; D13 |
+| Estacas do contorno | Biela a partir do centroide da parte do pilar voltada para a estaca (regra atual de 2 a 4 estacas), com a área restante do pilar | §4.1 |
+| Tirantes | Ver opções abaixo. Empuxo horizontal de cada estaca do contorno `H = R·lproj/z`, na direção da biela | §4.1 |
+| Nó da estaca interna | Verificado contra fcd3 com 1,4 × R do M1, mais aviso de que a reação real dessa estaca depende da rigidez das estacas e deve ser conferida na capacidade geotécnica | Bavaresco §5 |
+| Demais verificações | Iguais às da §4.1 por estaca; `y` pela D6 com a face espraiada (D13) | §4.1, §4.4 |
+| Validação | B7 recalculado (abaixo); equilíbrio e simetria em pentágono, hexágono e hexágono com estaca central | B7 |
+
+**Opções para os tirantes.**
+
+| Opção | Regra | B7: lados / diagonais | Aço total no fundo |
+|---|---|---|---|
+| A | Anel: tirantes entre estacas vizinhas do contorno, força pelo equilíbrio de cada nó (regra atual de 3 e 4 estacas) | 1752,7 kN (40,3 cm²) / — | igual à regra dos 4/5 |
+| B (recomendada) | Metade do empuxo no anel e metade em tirantes radiais, da estaca até o centro do pilar (nos polígonos pares viram diagonais contínuas de uma estaca à oposta) | 876,4 kN (20,2 cm²) / 1239,3 kN (28,5 cm²) | igual à A, distribuído como a fonte recomenda |
+| C | Anel com 100 % e tirantes radiais com 50 % | 1752,7 kN / 1239,3 kN | 50 % a mais que A |
+
+**B7 recalculado** (γn = 1,2, sem o peso próprio D7 para comparar com a fonte, φ16, d′ = 58 mm):
+Rd = 2400 kN por estaca, d = 2100 − 100 − 58 = 1942 mm, `y` = 186,8 mm, z = 1848,6 mm,
+lproj = 1909 mm nas estacas de canto (igual à fonte: √2·(160 − 100/4) cm), H = 2478,7 kN.
+
+| Grandeza | Fonte (Pd com peso próprio, γn = 1, z = 200 cm) | Recalculado | Diferença |
+|---|---|---|---|
+| lproj e θ da estaca de canto | 190,9 cm; 46,33° (tg 1,048) | 190,9 cm; tg 0,968 | braço `z = d − y/2` e d′ (D8) |
+| Tirante dos lados (50 %) | 758,35 kN (17,44 cm²) | 876,4 kN (20,16 cm²) | +15,6 %: γn e braço menor |
+| Tirante das diagonais (50 %) | 1072,47 kN (24,66 cm²) | 1239,3 kN (28,51 cm²) | +15,6 %, mesma razão |
+| Nó da estaca central | 8,74 MPa ≤ 9,64 MPa (com 1,4) | a calcular na implementação | — |
+
+A diferença é a mesma nos dois tirantes, (2400/2247)·(2000/1848,6) = 1,156, o que confirma que
+a geometria das bielas é a da fonte. MEF da D14 no B7 (malha 210 mm): tração de 1837 kN no
+plano x = −800 mm, contra 3505 kN dos tirantes do M5 que o cruzam em qualquer das opções.
+
 ## 5. Benchmarks propostos
 
 Valores de referência serão **recalculados por nós** e conferidos contra a publicação. Diferenças
@@ -332,6 +393,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | B4 | Exemplos de 5, 6, 7 e 16 estacas (simétricos e assimétricos) | CRSI Design Guide, cap. 8 | M1 (reações com momentos e estaqueamento assimétrico) | Reações < 1 % |
 | B5 | Exemplo de validação do programa 3D | Gomes 2015, §5.1 | M7 e futura verificação MEF | Forças nas barras < 1 % (recalculadas) |
 | B6 | Bloco com 3 pilares; pela figura, 330×300×140 cm e 12 estacas φ30 em grade 4×3 (o texto diz 200×200 cm e 16 estacas) | Macedo 2022, §6.2, Fig. 5.1/6.6 | M8 (D10) confrontado com M7 (D12) | Pilar fictício com mais tração que o M7 em x e em y; As da fonte não comparável (dados inconsistentes) |
+| B7 | Bloco 5 estacas em quincôncio (B05P01), 420×420×210 cm, estacas 60×60 a 160 cm do centro, pilar 100×100, Nd = 10 000 kN, C25 | Bavaresco 2016, §3.1 e §5 | M5 fora de grade (§4.6), regra dos 4/5 | Geometria das bielas contra a fonte; tirantes contra o recalculado |
 
 **Problemas já encontrados em B1** (por isso recalculamos):
 - Blévot: Macedo usa θ = 52° medido no CAD; pela geometria do modelo, `tg θ = d / (L√2/2 − ap√2/4)` dá θ = 49,2°. A força no tirante (254,09 kN) e As (5,84 cm²) conferem.
@@ -357,6 +419,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D12 | Treliça 3D (M7) para confrontar D10: ótimo de `Σ Ft·lt` (Gomes eq. 3.7) por programa linear sobre todas as ligações, com planos e reações iguais aos do M5, verificações de cruzamento e inclinação depois do ótimo, e alerta quando o pilar fictício dá menos tração que o M7; adiciona numpy e scipy (§4.3) | Aprovada (Rodrigo, 13/10/2026) |
 | D13 | M5 para N estacas em grade retangular: pilar dividido em nx × ny partes, tirantes por linha e coluna com força por equilíbrio dos nós, face do nó D6 espraiada a 45° em todos os blocos (§4.4) | Aprovada (Rodrigo, 13/10/2026) |
 | D14 | Verificação por MEF linear (gmsh + CalculiX) dos blocos rígidos: apoios rígidos nas áreas das estacas, cargas como pressão nos pilares, tração nos planos entre linhas de estacas contra o M5 (alerta acima de 10 %) e tensão média nos nós contra fcd1/fcd3; só comparação, sob demanda (§4.5) | Aprovada (Rodrigo, 16/10/2026) |
+| D15 | M5 para estacas fora de grade: contorno convexo com bielas da regra atual, estacas internas sob o pilar com biela vertical (4/5 generalizada) e nó verificado com 1,4 × R, tirantes metade no anel e metade radiais (opção B da §4.6) | Proposta (Claude, 16/10/2026) |
 
 ## 7. Ainda falta neste documento
 
