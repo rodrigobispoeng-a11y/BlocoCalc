@@ -3,7 +3,7 @@
 Especificação: docs/02-metodos.md §4.1 (Santos, Carvalho e Stucchi, 2019, eq. 19 a 21), com as
 decisões D4 (pilar retangular com as dimensões reais), D6 (profundidade `y` do nó CCC pelo
 equilíbrio horizontal do nó sob fcd1), D13 (face do nó espraiada a 45°; grade de N estacas) e
-D15 (estacas fora de grade, docs/02-metodos.md §4.6).
+D15 (estacas fora de grade, docs/02-metodos.md §4.6) e D17 (fileiras desencontradas, §4.8).
 
 Premissas do modelo, registradas na trilha de auditoria pelo chamador:
 - um pilar e estacas comprimidas: 2 a 4 no contorno do estaqueamento, 5 ou mais em grade
@@ -20,7 +20,10 @@ Premissas do modelo, registradas na trilha de auditoria pelo chamador:
   e força em cada trecho pelo equilíbrio dos nós de um lado ou do outro (o maior);
 - fora de grade (D15), estaca interna tem biela vertical a partir do próprio eixo; metade do
   empuxo de cada estaca do contorno vai para um tirante radial (até a estaca interna ou a estaca
-  oposta, quando houver) e o resto para o anel do contorno.
+  oposta, quando houver) e o resto para o anel do contorno;
+- em fileiras desencontradas (D17), o pilar é dividido em isoáreas (faixa por fileira e parte por
+  estaca, proporcionais às reações) deslocadas da excentricidade da carga, e os tirantes formam a
+  rede triangulada entre estacas vizinhas, com as forças pelo mínimo de Σ F·l (critério da D12).
 """
 
 from __future__ import annotations
@@ -30,6 +33,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+import numpy as np
+from scipy.optimize import linprog, minimize
+from scipy.spatial import Delaunay
+
+from blococalc.core.space_truss import OFF_AXIS_TIE_PENALTY
 from blococalc.schemas import Column, GeometryInput, Pile, PileReaction, PileShape
 
 _GRID = 100
@@ -38,6 +46,8 @@ _MAX_ITER = 200
 _Y_TOL_MM = 1e-6
 _RADIAL_SHARE = 0.5  # D15: metade do empuxo no tirante radial (Bavaresco 2016, §5)
 INTERIOR_PILE_FACTOR = 1.4  # D15: folga de 40 % no nó da estaca interna (Bavaresco 2016, §5)
+EQUILIBRIUM_WARNING_RATIO = 0.01  # D17: correção dos empuxos acima disso vira aviso
+_FORCE_TOL = 1e-4  # D17: tirante com menos que isso do maior empuxo é descartado
 
 
 class UnsupportedLayoutError(ValueError):
@@ -91,6 +101,8 @@ class StrutTieModel:
     struts: tuple[Strut, ...]
     ties: tuple[Tie, ...]
     interior_piles: tuple[str, ...] = ()  # D15: estacas internas sob o pilar
+    staggered: bool = False  # D17: fileiras desencontradas
+    equilibrium_correction: float = 0.0  # D17: correção dos empuxos / maior empuxo
 
 
 def santos_stucchi(
@@ -153,15 +165,26 @@ def santos_stucchi(
                 / (_pile_spread_area(pile, tie_height) * sin2),
             )
         )
+    correction = 0.0
     if layout.grid is not None:
         ties = _grid_ties(piles, struts, z, strengths.fyd, layout.grid)
+    elif layout.rows:
+        pushes = [_push(p, s, z) for p, s in zip(piles, struts, strict=True)]
+        ties, correction = _network_ties(piles, pushes, strengths.fyd)
     elif layout.polygon:
         pushes = [_push(p, s, z) for p, s in zip(layout.outline, struts, strict=False)]
         ties = _polygon_ties(layout.outline, interior, pushes, strengths.fyd, column)
     else:
         ties = _ties(piles, struts, z, strengths.fyd)
     return StrutTieModel(
-        d=d, y=y, z=z, struts=tuple(struts), ties=ties, interior_piles=tuple(p.id for p in interior)
+        d=d,
+        y=y,
+        z=z,
+        struts=tuple(struts),
+        ties=ties,
+        interior_piles=tuple(p.id for p in interior),
+        staggered=layout.rows,
+        equilibrium_correction=correction,
     )
 
 
@@ -172,6 +195,7 @@ class _Layout:
     grid: _PileGrid | None = None
     outline: tuple[Pile, ...] = ()
     interior: tuple[Pile, ...] = ()
+    rows: bool = False  # D17: fileiras desencontradas
 
     @property
     def polygon(self) -> bool:
@@ -183,7 +207,13 @@ def _layout(piles: Sequence[Pile], column: Column, reactions: dict[str, float]) 
     grid = _grid_or_none(piles) if len(piles) > 4 else None
     if grid is not None:
         return _Layout(list(piles), _grid_origins(column, piles, grid), grid=grid)
-    outline, interior = _outline(piles, column)
+    try:
+        outline, interior = _outline(piles, column)
+    except UnsupportedLayoutError:
+        rows = _pile_rows(piles)
+        if rows is None:
+            raise
+        return _Layout(list(piles), _row_origins(column, piles, rows, reactions), rows=True)
     if not interior and len(piles) <= 4:
         ordered = _hull_order(piles, column)
         return _Layout(ordered, _strut_origins(column, ordered))
@@ -434,6 +464,154 @@ def _opposite(pile: Pile, outline: Sequence[Pile], column: Column, reach: float)
         if gap < best_gap:
             best, best_gap = other, gap
     return best
+
+
+@dataclass(frozen=True)
+class _PileRows:
+    rows: list[list[Pile]]  # em ordem crescente da coordenada transversal
+    along_x: bool  # fileiras paralelas a x
+
+
+def _pile_rows(piles: Sequence[Pile]) -> _PileRows | None:
+    """Fileiras paralelas a x ou a y (D17), ordenadas; None se as estacas não formam fileiras.
+
+    As fileiras seguem o eixo com menos níveis de coordenada; são aceitas com ao menos duas
+    fileiras, todas com duas ou mais estacas.
+    """
+    by_axis = []
+    for axis in (1, 0):  # fileiras paralelas a x (níveis de y) ou a y (níveis de x)
+        levels = _levels([(p.x, p.y)[axis] for p in piles])
+        rows = [
+            sorted(
+                (p for p in piles if abs((p.x, p.y)[axis] - level) <= _LEVEL_TOL_MM),
+                key=lambda p: (p.x, p.y)[1 - axis],
+            )
+            for level in levels
+        ]
+        by_axis.append(_PileRows(rows, along_x=axis == 1))
+    found = min(by_axis, key=lambda r: len(r.rows))
+    if len(found.rows) < 2 or min(len(r) for r in found.rows) < 2:
+        return None
+    return found
+
+
+def _row_origins(
+    column: Column,
+    piles: Sequence[Pile],
+    rows: _PileRows,
+    reactions: dict[str, float],
+) -> list[tuple[float, float, float]]:
+    """Isoáreas do pilar (D17): uma faixa por fileira e uma parte por estaca, ∝ às reações.
+
+    As origens são deslocadas da excentricidade da carga, e = Σ R·p / Σ R − centro do pilar, para
+    que as componentes horizontais das bielas se equilibrem (Σ H = 0).
+    """
+    along_x = rows.along_x
+    total = sum(reactions[p.id] for p in piles)
+    ex = sum(reactions[p.id] * p.x for p in piles) / total - column.x
+    ey = sum(reactions[p.id] * p.y for p in piles) / total - column.y
+    if abs(ex) > column.bx / 2.0 or abs(ey) > column.by / 2.0:
+        raise UnsupportedLayoutError(
+            "Excentricidade da carga fora da seção do pilar: fora do escopo das fileiras (D17)"
+        )
+    across, along = (column.by, column.bx) if along_x else (column.bx, column.by)
+    origin: dict[str, tuple[float, float, float]] = {}
+    start = -across / 2.0
+    for row in rows.rows:
+        row_total = sum(reactions[p.id] for p in row)
+        height = across * row_total / total
+        position = -along / 2.0
+        for pile in row:
+            width = along * reactions[pile.id] / row_total
+            u, v = position + width / 2.0, start + height / 2.0
+            ox, oy = (u, v) if along_x else (v, u)
+            origin[pile.id] = (column.x + ex + ox, column.y + ey + oy, reactions[pile.id] / total)
+            position += width
+        start += height
+    return [origin[p.id] for p in piles]
+
+
+def _network_ties(
+    piles: Sequence[Pile], pushes: Sequence[tuple[float, float]], fyd: float
+) -> tuple[tuple[Tie, ...], float]:
+    """Rede triangulada de tirantes com o mínimo de Σ F·l (D17, critério da D12).
+
+    Os candidatos são os lados da triangulação de Delaunay das estacas; tirante fora das direções
+    x e y pesa 0,1 % a mais (desempate da D12). Antes, os empuxos recebem a menor correção que
+    zera a resultante e o momento em planta (resíduo das isoáreas sob momento); a correção
+    relativa ao maior empuxo é devolvida para a trilha de auditoria.
+    """
+    xy = np.array([(p.x, p.y) for p in piles])
+    loads = np.array(pushes, dtype=float).reshape(-1)
+    edges = sorted(
+        {
+            (min(a, b), max(a, b))
+            for tri in Delaunay(xy).simplices
+            for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[0], tri[2]))
+        }
+    )
+    # Modos de corpo rígido em planta: translação em x, em y e rotação.
+    center = xy.mean(axis=0)
+    modes = np.zeros((2 * len(piles), 3))
+    modes[0::2, 0] = 1.0
+    modes[1::2, 1] = 1.0
+    modes[0::2, 2] = -(xy[:, 1] - center[1])
+    modes[1::2, 2] = xy[:, 0] - center[0]
+    fix = modes @ np.linalg.lstsq(modes, loads, rcond=None)[0]
+    loads = loads - fix
+    largest = max(math.hypot(hx, hy) for hx, hy in pushes)
+    correction = float(np.abs(fix).max()) / largest if largest > 0.0 else 0.0
+
+    matrix = np.zeros((2 * len(piles), len(edges)))
+    cost = np.zeros(len(edges))
+    units = []
+    for k, (a, b) in enumerate(edges):
+        length = float(np.linalg.norm(xy[b] - xy[a]))
+        ux, uy = (xy[b] - xy[a]) / length
+        matrix[2 * a : 2 * a + 2, k] += (ux, uy)
+        matrix[2 * b : 2 * b + 2, k] -= (ux, uy)
+        on_axis = min(abs(ux), abs(uy)) < _LEVEL_TOL_MM / length
+        cost[k] = length * (1.0 if on_axis else 1.0 + OFF_AXIS_TIE_PENALTY)
+        units.append((float(ux), float(uy)))
+    solution = linprog(cost, A_eq=matrix, b_eq=-loads, bounds=(0.0, None), method="highs")
+    if not solution.success:
+        raise UnsupportedLayoutError("Tirante comprimido: geometria fora do escopo (D17)")
+    forces = _spread_optimum(matrix, -loads, cost, solution.x)
+    ties = tuple(
+        Tie(piles[a].id, piles[b].id, float(f), float(f) / fyd, ux, uy)
+        for (a, b), f, (ux, uy) in zip(edges, forces, units, strict=True)
+        if f > _FORCE_TOL * largest
+    )
+    return ties, correction
+
+
+def _spread_optimum(
+    matrix: np.ndarray, loads: np.ndarray, cost: np.ndarray, start: np.ndarray
+) -> np.ndarray:
+    """Entre as soluções de mínimo Σ F·l, a de menor Σ F² (única; preserva a simetria)."""
+    best = float(cost @ start)
+    scale = max(float(np.abs(start).max()), 1.0)
+    # Equilíbrio sem as equações redundantes dos modos de corpo rígido.
+    basis, singular, _ = np.linalg.svd(matrix, full_matrices=False)
+    basis = basis[:, singular > singular[0] * 1e-9]
+    matrix, loads = basis.T @ matrix, basis.T @ loads
+    result = minimize(
+        lambda f: float(f @ f),
+        start / scale,
+        jac=lambda f: 2.0 * f,
+        bounds=[(0.0, None)] * len(start),
+        constraints=(
+            {"type": "eq", "fun": lambda f: matrix @ f - loads / scale, "jac": lambda _: matrix},
+            {
+                "type": "ineq",
+                "fun": lambda f: best / scale * (1.0 + 1e-9) - cost @ f,
+                "jac": lambda _: -cost[None, :],
+            },
+        ),
+        method="SLSQP",
+        options={"maxiter": 500, "ftol": 1e-14},
+    )
+    return (result.x if result.success else start / scale) * scale
 
 
 def _grid_ties(

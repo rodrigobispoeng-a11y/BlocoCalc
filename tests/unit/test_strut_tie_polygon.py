@@ -125,32 +125,27 @@ def test_triangle_with_center_pile_under_column() -> None:
 
 
 def test_interior_pile_outside_column_is_rejected() -> None:
-    geometry = polygon_cap(6, center=True)
+    # Pentágono: as estacas não formam fileiras, então a D17 também não se aplica.
+    geometry = polygon_cap(5)
     shifted = geometry.model_copy(
-        update={"piles": (*geometry.piles[:-1], Pile(id="E7", x=300.0, y=0.0, size=400.0))}
+        update={"piles": (*geometry.piles, Pile(id="E6", x=300.0, y=100.0, size=400.0))}
     )
     with pytest.raises(UnsupportedLayoutError, match="sob o pilar"):
-        solve(shifted, 7e6)
+        solve(shifted, 6e6)
 
 
 def test_collinear_piles_on_outline_are_rejected() -> None:
-    # Fileiras desencontradas: 3 estacas alinhadas no lado de cima e 2 embaixo.
+    # Três estacas alinhadas embaixo e uma em cima: fileira de uma estaca fica fora da D17.
     geometry = polygon_cap(6).model_copy(
         update={
             "piles": tuple(
                 Pile(id=f"E{i + 1}", x=x, y=y, size=400.0)
                 for i, (x, y) in enumerate(
-                    (
-                        (-1000.0, 600.0),
-                        (0.0, 600.0),
-                        (1000.0, 600.0),
-                        (-500.0, -600.0),
-                        (500.0, -600.0),
-                    )
+                    ((-1000.0, -600.0), (0.0, -600.0), (1000.0, -600.0), (0.0, 900.0))
                 )
             ),
-            "columns": (Column(id="P1", x=0.0, y=120.0, bx=400.0, by=400.0),),
+            "columns": (Column(id="P1", x=0.0, y=-225.0, bx=400.0, by=400.0),),
         }
     )
     with pytest.raises(UnsupportedLayoutError, match="alinhadas"):
-        solve(geometry, 5e6)
+        solve(geometry, 4e6)
