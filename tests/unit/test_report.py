@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import re
 from datetime import date
 
 import pytest
 
-from blococalc.analysis import analyze
+from blococalc.analysis import analyze, strut_tie_layout
 from blococalc.report import calculation_report
 from blococalc.schemas import (
     AnalysisResult,
@@ -98,3 +100,25 @@ def test_pile_table_shows_stiffness() -> None:
     assert "k [kN/mm]" in html
     assert "<td>720.0</td>" in html
     assert html.count("<td>rígida</td>") == 3
+
+
+def test_report_embeds_form_and_model_drawings() -> None:
+    # ADR-008: forma na seção 1 e o modelo de cada caso na seção 3, como SVG embutido.
+    saved = project()
+    layout = strut_tie_layout(saved, "ELU1")
+    assert layout is not None
+    html = calculation_report(saved, ISSUED, {"ELU1": layout})
+    images = re.findall(r"<img src='data:image/svg\+xml;base64,([^']+)' width='(\d+)'", html)
+    assert len(images) == 3 + 3  # forma: planta e 2 cortes; modelo: planta e 2 cortes
+    svgs = [base64.b64decode(data).decode() for data, _ in images]
+    assert all(s.startswith("<svg") for s in svgs)
+    assert all(f"{m.force_d / 1e3:.0f} kN" in svgs[3] for m in layout.members)
+    assert html.index("Forma (cotas em cm)") < html.index("<h2>2.")
+    assert html.index("<h2>3.") < html.index("Modelo de bielas e tirantes: caso ELU1")
+    assert html.index("Modelo de bielas") < html.index("<h2>4.")
+
+
+def test_report_without_drawings() -> None:
+    html = calculation_report(project(), ISSUED, drawings=False)
+    assert "<img" not in html
+    assert "Forma (cotas em cm)" not in html
