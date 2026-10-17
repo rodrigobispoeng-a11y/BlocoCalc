@@ -75,15 +75,17 @@ def test_defaults_follow_approved_decisions() -> None:
     assert (materials.gamma_c, materials.gamma_s, materials.fyk) == (1.4, 1.15, 500.0)
 
 
-@pytest.mark.parametrize("old", ["1", "2", "3", "4"])
-def test_older_documents_are_read_as_v5(old: str) -> None:
+@pytest.mark.parametrize("old", ["1", "2", "3", "4", "5"])
+def test_older_documents_are_read_as_v6(old: str) -> None:
     data = four_pile_cap().model_dump(mode="json")
     data["schema_version"] = old
     for pile in data["piles"]:
         del pile["axial_stiffness"]
     geometry = GeometryInput.model_validate(data)
-    assert geometry.schema_version == "5"
+    assert geometry.schema_version == "6"
     assert all(p.axial_stiffness is None for p in geometry.piles)
+    detailing = DetailingInput.model_validate({"schema_version": old, "bar_diameter": 20.0})
+    assert detailing.max_aggregate_size == 19.0
     v1_result = {
         "schema_version": "1",
         "rigid": True,
@@ -94,9 +96,29 @@ def test_older_documents_are_read_as_v5(old: str) -> None:
     assert AnalysisResult.model_validate(v1_result).reinforcement == ()
 
 
+def test_reinforcement_bars_are_optional() -> None:
+    # ADR-009: armaduras sem barras (suspensão, lateral) e resultados da v5 ficam com None.
+    bare = Reinforcement(
+        id="suspensao",
+        kind=ReinforcementKind.SUSPENSION,
+        direction=(0.0, 0.0),
+        force_d=0.0,
+        area_required=0.0,
+        bar_diameter=16.0,
+        reference=Reference(source="NBR 6118:2023", item="22.7.4.1.3"),
+    )
+    assert (bare.bar_count, bare.spacing, bare.area_provided) == (None, None, None)
+    tie = bare.model_copy(update={"bar_count": 3, "area_provided": 603.2})
+    assert Reinforcement.model_validate(tie.model_dump()).bar_count == 3
+    with pytest.raises(ValidationError):
+        Reinforcement.model_validate({**bare.model_dump(), "bar_count": 0})
+    with pytest.raises(ValidationError):
+        DetailingInput(max_aggregate_size=0.0)
+
+
 def test_unknown_schema_version_is_rejected() -> None:
     data = four_pile_cap().model_dump(mode="json")
-    data["schema_version"] = "6"
+    data["schema_version"] = "7"
     with pytest.raises(ValidationError):
         GeometryInput.model_validate(data)
 

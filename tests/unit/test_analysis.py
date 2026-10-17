@@ -264,19 +264,21 @@ def test_quincunx_by_d15_warns_about_the_center_pile() -> None:
 
 
 @pytest.mark.golden
-def test_input_hash_of_v4_inputs_is_unchanged() -> None:
-    # ADR-007: o hash ignora campos vazios e a versão do contrato, para os arquivos .bloco
-    # salvos antes da v5 continuarem com os resultados válidos. Valores calculados na v4.
+def test_input_hash_format_6() -> None:
+    # ADR-009: o formato do hash passa de "4" para "6", para os resultados salvos sem barras
+    # ficarem desatualizados. Campos vazios continuam fora do hash (ADR-007).
     loads = LoadsInput(
         cases=(LoadCase(id="ELU1", column_loads=(ColumnLoad(column_id="P1", n=980e3, mx=1.5e6),)),)
     )
     b1 = analysis._input_hash(four_pile_cap(), C35, loads, DetailingInput())
-    b7 = analysis._input_hash(quincunx_cap(), C35, loads, DetailingInput(hooked=False))
-    assert b1 == "7f79c43e728fd467f20c3798886c3256b728b902f22fa3240ee5dc837d7714ae"
-    assert b7 == "1f3465a7b8c38e1e9e6078360307d56b567f45f457a38bb8009deca7edcc883a"
+    v5 = "7f79c43e728fd467f20c3798886c3256b728b902f22fa3240ee5dc837d7714ae"  # B1 na v4 e na v5
+    assert b1 != v5
+    assert b1 == "e2b957278da4c93022022efe26c01a12113dbc3edd47c2df65324bad4c4febcb"
     stiff = four_pile_cap().piles[0].model_copy(update={"axial_stiffness": 720e3})
     geometry = four_pile_cap().model_copy(update={"piles": (stiff, *four_pile_cap().piles[1:])})
     assert analysis._input_hash(geometry, C35, loads, DetailingInput()) != b1
+    coarse = DetailingInput(max_aggregate_size=25.0)
+    assert analysis._input_hash(four_pile_cap(), C35, loads, coarse) != b1
 
 
 def test_piles_with_different_stiffness_warn_about_m1() -> None:

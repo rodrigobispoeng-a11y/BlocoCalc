@@ -12,8 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION: Literal["5"] = "5"
-_READABLE_VERSIONS = ("1", "2", "3", "4", "5")
+SCHEMA_VERSION: Literal["6"] = "6"
+_READABLE_VERSIONS = ("1", "2", "3", "4", "5", "6")
 
 
 class _Contract(BaseModel):
@@ -23,9 +23,9 @@ class _Contract(BaseModel):
 
 
 class _Versioned(_Contract):
-    """Contrato de topo. Lê v1 a v4: as versões novas só acrescentam campos e valores."""
+    """Contrato de topo. Lê v1 a v5: as versões novas só acrescentam campos e valores."""
 
-    schema_version: Literal["5"] = SCHEMA_VERSION
+    schema_version: Literal["6"] = SCHEMA_VERSION
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -176,6 +176,11 @@ class DetailingInput(_Versioned):
     hooked: bool = Field(
         default=True, description="Ganchos nas pontas dos tirantes (NBR 6118:2023, 22.7.4.1.1)"
     )
+    max_aggregate_size: float = Field(
+        default=19.0,
+        gt=0,
+        description="Dimensão máxima do agregado graúdo [mm] (NBR 6118:2023, 18.3.2.2; ADR-009)",
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -229,7 +234,12 @@ class ReinforcementKind(StrEnum):
 
 
 class Reinforcement(_Contract):
-    """Armadura calculada (ADR-002). `area_required` é a área mínima, não a efetiva."""
+    """Armadura calculada (ADR-002) e barras escolhidas (ADR-009).
+
+    `area_required` é a área mínima; `area_provided` é a das barras escolhidas. Os campos de
+    barras ficam `None` quando a armadura não tem barras (suspensão, lateral) e nos resultados
+    anteriores à v6.
+    """
 
     id: str = Field(min_length=1)
     kind: ReinforcementKind
@@ -240,6 +250,9 @@ class Reinforcement(_Contract):
     area_required: float = Field(ge=0, description="Área de aço necessária [mm²]")
     bar_diameter: float = Field(gt=0, description="[mm]")
     reference: Reference
+    bar_count: int | None = Field(default=None, gt=0, description="Barras do tirante")
+    spacing: float | None = Field(default=None, gt=0, description="Malha e flexão [mm]")
+    area_provided: float | None = Field(default=None, gt=0, description="Área efetiva [mm²]")
 
 
 class AnalysisResult(_Versioned):
