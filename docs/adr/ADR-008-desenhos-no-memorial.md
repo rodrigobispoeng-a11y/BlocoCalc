@@ -1,6 +1,6 @@
 # ADR-008 — Desenhos do bloco no memorial
 
-- Status: proposta
+- Status: aceita (Rodrigo, 2026-10-17)
 - Contexto: o memorial (ADR-005) só tem tabelas. Para revisar o cálculo, o engenheiro precisa
   ver a geometria e o modelo de bielas e tirantes: onde estão as estacas, de onde saem as
   bielas, por onde passam os tirantes e com que força. Hoje isso só aparece na aba 3D (ADR-006),
