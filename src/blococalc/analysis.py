@@ -189,6 +189,17 @@ def analyze(
     return asked.model_copy(update={"warnings": (*asked.warnings, note)})
 
 
+def adopted_bar_diameter(
+    geometry: GeometryInput,
+    materials: MaterialsInput,
+    loads: LoadsInput,
+    detailing: DetailingInput | None = None,
+) -> float:
+    """φ dos tirantes que `analyze()` adota, depois de subir pela série se preciso (D18)."""
+    parameters = analyze(geometry, materials, loads, detailing).audit.parameters
+    return float(parameters["bar_diameter_mm"])
+
+
 def _bars_fit(result: AnalysisResult) -> bool:
     """Barras dos tirantes cabem na faixa e a flexão tem espaçamento executável (D18)."""
     band = all(
@@ -466,7 +477,8 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
     from blococalc.fem.mesh import mesh_cap  # noqa: PLC0415
 
     options = detailing or DetailingInput()
-    tie_height = geometry.cap.cover + options.bar_diameter / 2.0
+    phi = adopted_bar_diameter(geometry, materials, loads, options)  # D18
+    tie_height = geometry.cap.cover + phi / 2.0
     strengths = strut_tie_strengths(materials)
     ratio = SELF_WEIGHT_RATIO if loads.include_cap_self_weight else 0.0
     checks = list(
@@ -575,7 +587,8 @@ def strut_tie_layout(project: Project, case_id: str) -> StrutTieLayout | None:
     rigidity = rigidity_checks(geometry.cap, model_geometry.columns[0])
     if any(c.status is not CheckStatus.OK for c in rigidity):
         return None
-    tie_height = geometry.cap.cover + project.detailing.bar_diameter / 2.0
+    phi = adopted_bar_diameter(geometry, project.materials, loads, project.detailing)  # D18
+    tie_height = geometry.cap.cover + phi / 2.0
     self_weight = (
         SELF_WEIGHT_RATIO * sum(load.n for load in case.column_loads)
         if loads.include_cap_self_weight

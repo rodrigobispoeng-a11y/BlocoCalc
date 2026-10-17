@@ -74,6 +74,8 @@ def _inputs(project: Project, drawings: bool) -> list[str]:
     g, m, loads, d = project.geometry, project.materials, project.loads, project.detailing
     cap = g.cap
     tie_height = cap.cover + d.bar_diameter / 2.0  # D8
+    if project.result is not None:  # φ adotado pela D18, que pode ser maior que o digitado
+        tie_height = float(project.result.audit.parameters.get("tie_height_mm", tie_height))
     forms = [
         "<h3>Forma (cotas em cm)</h3>",
         _figure(form_plan(g), _PLAN_WIDTH, "Planta de forma"),

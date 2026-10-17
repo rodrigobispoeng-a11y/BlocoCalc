@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from blococalc.analysis import analyze
+from blococalc.analysis import adopted_bar_diameter, analyze, strut_tie_layout
 from blococalc.schemas import (
     CheckStatus,
     ColumnLoad,
@@ -14,6 +14,7 @@ from blococalc.schemas import (
     LoadCase,
     LoadsInput,
     MaterialsInput,
+    Project,
     ReinforcementKind,
 )
 from blococalc.standards.bars import (
@@ -131,3 +132,19 @@ def test_no_bar_fits_keeps_the_asked_diameter_and_warns() -> None:
     assert tie.bar_diameter == 16.0
     assert any(c.status is CheckStatus.FAIL for c in result.checks if ":faixa_" in c.id)
     assert any("φ40" in w and "D18" in w for w in result.warnings)
+
+
+def test_layout_and_fem_use_the_adopted_diameter() -> None:
+    # O 3D, os desenhos e o MEF refazem o modelo com o φ adotado, não com o digitado.
+    case = LoadCase(id="C1", column_loads=(ColumnLoad(column_id="P1", n=1.4 * 8 * 113.96 * TF),))
+    loads = LoadsInput(cases=(case,), include_cap_self_weight=False)
+    geometry, materials = grid_cap(4, 2), MaterialsInput(fck=35.0)
+    asked = DetailingInput(bar_diameter=25.0)
+    assert adopted_bar_diameter(geometry, materials, loads, asked) == 32.0
+    project = Project(
+        name="B2", geometry=geometry, materials=materials, loads=loads, detailing=asked
+    )
+    layout = strut_tie_layout(project, "C1")
+    assert layout is not None
+    pile = next(n for n in layout.nodes if n.id == "estaca_E1")
+    assert pile.z == pytest.approx(geometry.cap.pile_embedment + geometry.cap.cover + 16.0)
