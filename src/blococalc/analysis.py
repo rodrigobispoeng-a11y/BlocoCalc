@@ -31,7 +31,7 @@ from blococalc import __version__
 from blococalc.core.cap_truss import cap_truss
 from blococalc.core.flexible_cap import face_shears, punching_load, s1_moments
 from blococalc.core.reactions import rigid_cap_reactions
-from blococalc.core.strut_tie import StrutTieModel, santos_stucchi
+from blococalc.core.strut_tie import EQUILIBRIUM_WARNING_RATIO, StrutTieModel, santos_stucchi
 from blococalc.geometry.fictitious_column import fictitious_column
 from blococalc.schemas import (
     AnalysisResult,
@@ -104,6 +104,10 @@ _STIFFNESS_WARNING = (
     "Estacas com rigidez diferente (D16): as reações do M1 supõem estacas iguais; a rigidez só "
     "entra na conferência por MEF."
 )
+_STAGGERED_ASSUMPTION = (
+    "Fileiras desencontradas: bielas de isoáreas do pilar proporcionais às reações, deslocadas da "
+    "excentricidade; tirantes na triangulação das estacas pelo mínimo de Σ F·l (D17)."
+)
 _M7_ASSUMPTION = (
     "Vários pilares: treliça 3D de menor Σ Ft·lt (M7) com os pilares reais em quatro nós cada, "
     "planos do M5 e peso próprio nos pilares, só para confronto (D12)."
@@ -165,6 +169,7 @@ def analyze(
         warnings.append(_STIFFNESS_WARNING)
     reactions: list[PileReaction] = []
     envelope: dict[str, Reinforcement] = {}
+    corrections: dict[str, float] = {}  # D17: um por caso com fileiras desencontradas
 
     for case in loads.cases:
         self_weight = (
@@ -199,9 +204,9 @@ def analyze(
             checks += _tag(case.id, m7_checks)
             warnings += m7_warnings
         warnings += [w for w in result.warnings if w not in warnings]
-        if model.interior_piles:
-            interior = _interior_pile_warning(model.interior_piles)
-            warnings += [interior] if interior not in warnings else []
+        notes, layout_warnings = _layout_notes(case.id, model)
+        corrections |= notes
+        warnings += [w for w in layout_warnings if w not in warnings]
         phi = options.bar_diameter
         items = [
             Reinforcement(
@@ -251,7 +256,11 @@ def analyze(
             app_version=__version__,
             method=METHOD if rigid else FLEXIBLE_METHOD,
             assumptions=(
-                (*_ASSUMPTIONS, *((_M7_ASSUMPTION,) if multiple else ()))
+                (
+                    *_ASSUMPTIONS,
+                    *((_STAGGERED_ASSUMPTION,) if corrections else ()),
+                    *((_M7_ASSUMPTION,) if multiple else ()),
+                )
                 if rigid
                 else _FLEXIBLE_ASSUMPTIONS
             ),
@@ -261,6 +270,7 @@ def analyze(
                 "bar_diameter_mm": options.bar_diameter,
                 "self_weight_ratio": SELF_WEIGHT_RATIO if loads.include_cap_self_weight else 0.0,
                 "aggressiveness_class": options.aggressiveness_class.value,
+                **corrections,
             },
             input_hash=_input_hash(geometry, materials, loads, options),
         ),
@@ -727,6 +737,21 @@ def _space_truss_comparison(
             f"Caso {case.id}: bielas da treliça 3D (M7) se cruzam fora dos nós: {pairs}."
         )
     return checks, warnings
+
+
+def _layout_notes(case_id: str, model: StrutTieModel) -> tuple[dict[str, float], list[str]]:
+    """Avisos do estaqueamento (D15, D17) e a correção dos empuxos para a trilha (D17)."""
+    warnings = [_interior_pile_warning(model.interior_piles)] if model.interior_piles else []
+    if not model.staggered:
+        return {}, warnings
+    ratio = model.equilibrium_correction
+    if ratio > EQUILIBRIUM_WARNING_RATIO:
+        # As isoáreas não equilibram o momento em planta e os empuxos foram corrigidos.
+        warnings.append(
+            f"Caso {case_id}: os empuxos das bielas precisaram de correção de {100 * ratio:.1f} % "
+            "do maior empuxo para fechar o equilíbrio em planta (D17); conferir por MEF."
+        )
+    return {f"equilibrium_correction_{case_id}": ratio}, warnings
 
 
 def _interior_pile_warning(pile_ids: Sequence[str]) -> str:

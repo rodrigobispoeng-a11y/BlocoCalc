@@ -113,3 +113,33 @@ def polygon_cap(n: int, radius: float = 1000.0, center: bool = False) -> Geometr
         piles=piles,
         columns=(Column(id="P1", x=0.0, y=0.0, bx=400.0, by=400.0),),
     )
+
+
+def staggered_cap(
+    rows: tuple[int, ...],
+    column: tuple[float, float] = (800.0, 800.0),
+    h: float = 1500.0,
+    spacing: float = 1500.0,
+) -> GeometryInput:
+    """Estacas φ600 em fileiras desencontradas paralelas a x, em triângulo equilátero (D17).
+
+    `rows` dá o número de estacas de cada fileira, de baixo para cima; cada fileira é centrada em
+    x e as fileiras ficam a spacing·√3/2. Bloco com 750 mm de borda e pilar no centroide.
+    """
+    pitch = spacing * math.sqrt(3.0) / 2.0
+    points = [
+        ((i - (n - 1) / 2.0) * spacing, (j - (len(rows) - 1) / 2.0) * pitch)
+        for j, n in enumerate(rows)
+        for i in range(n)
+    ]
+    cy = sum(y for _, y in points) / len(points)
+    return GeometryInput(
+        cap=Cap(
+            lx=(max(rows) - 1) * spacing + 1500.0,
+            ly=(len(rows) - 1) * pitch + 1500.0,
+            h=h,
+            pile_embedment=100.0,
+        ),
+        piles=tuple(Pile(id=f"E{k + 1}", x=x, y=y, size=600.0) for k, (x, y) in enumerate(points)),
+        columns=(Column(id="P1", x=0.0, y=cy, bx=column[0], by=column[1]),),
+    )
