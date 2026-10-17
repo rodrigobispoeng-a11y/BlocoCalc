@@ -67,6 +67,7 @@ def test_defaults_reproduce_b1(app: object) -> None:
     assert materials.fck == 35.0
     assert loads.cases[0].column_loads[0].n == pytest.approx(980.0 * KN)
     assert detailing.bar_diameter == 16.0
+    assert detailing.max_aggregate_size == 19.0
 
     window.calculate()
 
@@ -78,8 +79,29 @@ def test_defaults_reproduce_b1(app: object) -> None:
     assert cell.text() == "257.25"
     assert window.checks_table.rowCount() == len(window.result.checks)
     assert window.reinforcement_table.rowCount() == len(window.result.reinforcement)
+    # D18: barras escolhidas na tabela de armaduras.
+    rows = {
+        _text(window.reinforcement_table, i, 0): i
+        for i in range(window.reinforcement_table.rowCount())
+    }
+    assert _text(window.reinforcement_table, rows["tirante_E1_E2"], 3) == "3 φ16"
+    assert _text(window.reinforcement_table, rows["tirante_E1_E2"], 4) == "6.03"
+    assert _text(window.reinforcement_table, rows["malha_x"], 3) == "φ6,3 c/20"
     assert "rígido" in window.summary.toPlainText()
     assert window.status.text() == window.result.disclaimer
+
+
+def _text(table: object, row: int, column: int) -> str:
+    item = table.item(row, column)  # type: ignore[attr-defined]
+    assert item is not None
+    return str(item.text())
+
+
+def test_aggregate_size_is_an_input(app: object) -> None:
+    window = MainWindow()
+    window.max_aggregate.setValue(25.0)
+    assert window.inputs()[3].max_aggregate_size == 25.0
+    assert window.modified
 
 
 def test_invalid_input_shows_message(app: object) -> None:
