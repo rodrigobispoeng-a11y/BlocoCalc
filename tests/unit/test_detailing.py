@@ -39,11 +39,21 @@ def test_b1_detailing() -> None:
     total_x = sum(t.force_d for t in model_ties if t.dir_y == 0.0)
     assert result.distribution_area_x == pytest.approx(0.2 * total_x / FYD)
     assert result.distribution_area_x == pytest.approx(180.89, abs=0.01)  # 184,49 antes da D13
-    # Ancoragem: φ16 com gancho, ℓb,nec = 0,7·481,59 = 337,1 mm; disponível da face interna da
-    # estaca (x = 400) até a face do bloco menos o cobrimento: 1000 − 50 − 400 = 550 mm.
+    # D18: 4,52 cm² -> 3 φ16 (6,03 cm²) em x e 3,60 cm² -> 2 φ16 (4,02 cm²) em y, folgados na
+    # faixa de 480 mm (3·16 + 2·22,8 = 93,6 mm com brita 1).
+    assert result.bar_counts == {("E1", "E2"): 3, ("E2", "E3"): 2, ("E3", "E4"): 3, ("E4", "E1"): 2}
+    band = {c.id: c.demand for c in result.checks if c.id.startswith("faixa_")}
+    assert band == {"faixa_E1_E2": pytest.approx(93.6), "faixa_E2_E3": pytest.approx(54.8)} | {
+        "faixa_E3_E4": pytest.approx(93.6),
+        "faixa_E4_E1": pytest.approx(54.8),
+    }
+    # Ancoragem: φ16 com gancho, 0,7·481,59 = 337,1 mm, vezes As,calc/As,ef (9.4.2.5): 452,2/603,2
+    # dá 252,7 mm em x e 359,7/402,1 dá 301,6 mm em y (337,1 para todos antes da D18).
+    # Disponível da face interna da estaca (x = 400) até a face do bloco menos o cobrimento:
+    # 1000 − 50 − 400 = 550 mm.
     anchorage = [c for c in result.checks if c.id.startswith("ancoragem_")]
     assert len(anchorage) == 8
-    assert {round(c.demand, 1) for c in anchorage} == {337.1}
+    assert {round(c.demand, 1) for c in anchorage} == {252.7, 301.6}
     assert [c.capacity for c in anchorage] == pytest.approx([550.0] * 8)
     assert all(c.status is CheckStatus.OK for c in result.checks)
     assert result.warnings == ()
@@ -51,11 +61,11 @@ def test_b1_detailing() -> None:
 
 def test_short_overhang_fails_anchorage() -> None:
     base = four_pile_cap()
-    tight = base.model_copy(update={"cap": base.cap.model_copy(update={"lx": 1500.0})})
+    tight = base.model_copy(update={"cap": base.cap.model_copy(update={"lx": 1400.0})})
     result = rigid_cap_detailing(tight, ties(base, 980e3), C35, PHI16, 50.0)
     x_ends = [c for c in result.checks if c.id in ("ancoragem_E1_E2_E1", "ancoragem_E1_E2_E2")]
-    # 750 − 600 + 200 − 50 = 300 mm < 337,1 mm.
-    assert [c.capacity for c in x_ends] == pytest.approx([300.0, 300.0])
+    # 700 − 600 + 200 − 50 = 250 mm < 252,7 mm.
+    assert [c.capacity for c in x_ends] == pytest.approx([250.0, 250.0])
     assert all(c.status is CheckStatus.FAIL for c in x_ends)
 
 
@@ -78,7 +88,7 @@ def test_straight_bars_need_longer_anchorage_and_warn() -> None:
     options = DetailingInput(bar_diameter=16.0, hooked=False)
     result = rigid_cap_detailing(four_pile_cap(), ties(four_pile_cap(), 980e3), C35, options, 50.0)
     anchorage = [c for c in result.checks if c.id.startswith("ancoragem_")]
-    assert anchorage[0].demand == pytest.approx(481.59, abs=0.01)  # α = 1,0
+    assert anchorage[0].demand == pytest.approx(481.59 * 452.21 / 603.19, abs=0.01)  # α = 1,0
     assert any("gancho" in w for w in result.warnings)
 
 
@@ -98,3 +108,6 @@ def test_grid_rows_anchor_at_the_ends_and_size_the_mesh_by_the_worst_segment() -
     assert anchored == {"E1", "E4", "E5", "E8"}
     anchors = [c for c in result.checks if c.id.startswith("ancoragem_")]
     assert len(anchors) == 2 * 2 + 4 * 2  # pontas das 2 linhas em x e das 4 colunas em y
+    # A linha toda leva as barras do trecho mais carregado (D18).
+    counts = {result.bar_counts[(t.pile_a, t.pile_b)] for t in x_ties if t.pile_a in ("E1", "E2")}
+    assert len(counts) == 1

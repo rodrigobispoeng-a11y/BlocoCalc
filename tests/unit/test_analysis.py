@@ -92,20 +92,24 @@ def flexible_cap(h: float = 600.0) -> GeometryInput:
 
 @pytest.mark.golden
 def test_flexible_cap_by_d9() -> None:
-    # Md = 1,2·2·500·0,96 = 1152 kN·m por seção S1; dx = 600 − 100 − 58 = 442, dy = 426.
+    # Md = 1,2·2·500·0,96 = 1152 kN·m por seção S1. Com φ16 seriam 63,6 cm² em 3 m, c/9 abaixo
+    # dos 100 mm da D18: o φ sobe para 20 e dx = 600 − 100 − 60 = 440, dy = 420 (antes da D18,
+    # φ16 com dx = 442, dy = 426 e 63,58 cm²).
     result = analyze(flexible_cap(), MaterialsInput(fck=30.0), loads(2000e3, self_weight=False))
     assert not result.rigid
     assert result.audit.method == "ceb70-nbr6118-flexao"
     sigma = 0.85 * 30.0 / 1.4
     areas = {}
-    for axis, d in (("x", 442.0), ("y", 426.0)):
+    for axis, d in (("x", 440.0), ("y", 420.0)):
         y = d - math.sqrt(d * d - 2.0 * 1152e6 / (sigma * 3000.0))
         areas[axis] = sigma * 3000.0 * y / (500.0 / 1.15)
     bars = {r.id: r for r in result.reinforcement}
     assert set(bars) == {"flexao_x", "flexao_y"}
     assert bars["flexao_x"].kind is ReinforcementKind.FLEXURE
     assert bars["flexao_x"].area_required == pytest.approx(areas["x"])
-    assert bars["flexao_x"].area_required == pytest.approx(6358.5, abs=0.1)
+    assert bars["flexao_x"].area_required == pytest.approx(6391.1, abs=0.1)
+    assert (bars["flexao_x"].bar_diameter, bars["flexao_x"].spacing) == (20.0, 140.0)
+    assert any("φ16" in w and "φ20" in w for w in result.warnings)
     assert bars["flexao_y"].area_required == pytest.approx(areas["y"])
 
     checks = {c.id: c for c in result.checks}
