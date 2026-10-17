@@ -421,6 +421,65 @@ ele (a NBR 6122:2019 não fixa rigidez de estaca), então o programa não invent
 | Ajuda na tela | Texto de apoio, sem valor padrão: para estaca de ponta, `k ≈ Ecs·A/L` só do fuste é um limite superior; estacas de atrito são mais flexíveis | — |
 | Auditoria | Os valores de `k` usados entram nos parâmetros da trilha do MEF | CLAUDE.md §8 |
 
+## 4.8 M5 para estacas em fileiras desencontradas (especificação, D17 aprovada)
+
+Objetivo: levar o M5 aos estaqueamentos em fileiras paralelas deslocadas entre si (5-4, 3-2-3,
+4-3-4, 4-2-4 e os demais padrões de 7 a 30 estacas do CRSI), que hoje são recusados porque não
+formam grade (D13) nem polígono com as estacas internas sob o pilar (D15). Fontes: curso "Blocos
+de Coroamento Complexos" (TQS), lâminas "Expandindo a ideia para blocos com várias estacas",
+exemplo de 9 estacas em disposição 5-4 sob pilar-parede; CRSI Design Guide for Pile Caps,
+Fig. 4.4 (padrões de 2 a 30 estacas); Gomes (2015) para o critério de escolha dos tirantes, já
+adotado na D12.
+
+**O que a fonte mostra.**
+- As bielas saem do centro de isoáreas do pilar (partes de mesma área, uma por estaca) e chegam
+  ao centro da estaca, com as verificações de Fusco nos nós (a NBR 6118 e as regras do M5 já
+  cobrem isso).
+- Os tirantes formam uma rede triangulada: um tirante por fileira, entre estacas vizinhas, e
+  diagonais em zigue-zague entre fileiras vizinhas.
+- A força em cada tirante é a projeção da biela de cada estaca, `Tx = Td·cos α` e `Ty = Td·cos β`,
+  estaca a estaca, sem acumular ao longo da fileira. É o mesmo procedimento da planilha de N
+  estacas, que já vimos na D13 que não equilibra os nós (§4.4). As lâminas não trazem números.
+
+**Achados.**
+- A rede de fileiras e diagonais é isostática só com duas fileiras ou quando as fileiras internas
+  têm 2 estacas (5-4, 3-2-3). Cada estaca a mais numa fileira interna acrescenta uma barra
+  redundante (4-3-4 tem 1, 5-4-5 tem 2), e o equilíbrio dos nós sozinho não decide as forças.
+  O critério da D12 (mínimo de `Σ F·l`, Gomes eq. 3.7) decide, e já está no programa.
+- Isoáreas de mesma área só equilibram as componentes horizontais das bielas (`Σ H = 0`) quando as
+  reações são iguais. Com isoáreas proporcionais às reações, deslocadas da excentricidade da carga
+  `e = M/N`, o equilíbrio é exato para qualquer carga: `Σ R·o = Σ R·p` é a própria condição do M1.
+- Sob momento, ainda sobra um momento em planta pequeno (nos protótipos, até 0,5 % do maior
+  empuxo), porque as isoáreas não são a distribuição exata das tensões do pilar.
+- Em layouts simétricos o mínimo de `Σ F·l` costuma ter vários ótimos, e o programa linear devolve
+  um deles, assimétrico. Entre os ótimos, o de menor `Σ F²` é único e mantém a simetria.
+
+**Especificação (D17).**
+
+| Etapa | Regra | Fonte |
+|---|---|---|
+| Escopo | Um pilar (vários pilares pelo pilar fictício, D10); estacas em 2 ou mais fileiras retas paralelas a x ou a y (o eixo com menos níveis de coordenada), todas com 2 ou mais estacas. Só entra o que a D13 e a D15 recusam: grades e polígonos com estaca central sob o pilar (2-1-2, 2-3-2) não mudam. Layout sem fileiras continua bloqueado com aviso | CRSI Fig. 4.4; TQS |
+| Origem das bielas | Isoáreas: o pilar é dividido em uma faixa por fileira, com largura proporcional à soma das reações da fileira, e cada faixa em uma parte por estaca, na ordem da fileira, com largura proporcional à reação; a biela sai do centroide da parte. Com reações iguais, é a divisão em partes de mesma área da fonte e, numa grade, a da D13 | TQS; D13 |
+| Excentricidade | As origens são deslocadas de `e = Σ R·p / Σ R − centro do pilar` (o `e = M/N` do M1), para fechar `Σ H = 0`. Se a origem deslocada sair da seção do pilar, o bloco é recusado com aviso | M1 |
+| Profundidade `y` | D6 com a face espraiada (D13), como hoje | §4.1, §4.4 |
+| Tirantes | Candidatos: os lados da triangulação de Delaunay das estacas (fileiras, diagonais entre fileiras e os lados do contorno). Força pelo mínimo de `Σ F·l` com tração apenas, sujeito ao equilíbrio de cada estaca com o empuxo `H = R·lproj/z`; desempate da D12 (tirante fora de x e y pesa 0,1 % a mais) e, entre os ótimos, o de menor `Σ F²`. Sem solução só com tração, o bloco é recusado | Gomes eq. 3.7; D12 |
+| Resíduo | Antes do programa linear, os empuxos recebem a menor correção que zera a resultante e o momento em planta. A correção relativa ao maior empuxo vai para a trilha de auditoria; acima de 1 %, aviso | — |
+| Detalhamento | Igual ao da D13: trechos alinhados formam barra contínua, ancoragem verificada nas pontas de cada barra (as diagonais são barras isoladas, ancoradas nas duas estacas), malha de 20 % com a soma das projeções | NBR 6118:2023, 22.7.4.1.1 e 22.7.4.1.2 |
+| Demais verificações | Iguais às da §4.1 por estaca (fcd1, fcd3, `0,57 ≤ tg θ ≤ 2`, `y/d ≤ 0,3`) | NBR 6118:2023, 22.3.1 e 22.3.2 |
+| Validação | Equilíbrio exato e simetria em 5-4, 3-2-3, 4-3-4 e 4-2-4, com e sem momento; MEF da D14 com molas da D16 no 3-2-3 (abaixo); a lógica da D13 e da D15 continua passando nos testes atuais | D14, D16 |
+
+**Protótipo.** Estacas φ60 com espaçamento de 150 cm e fileiras a 129,9 cm (triângulo
+equilátero), borda de 75 cm, C30, γn = 1,2 e D7.
+
+| Bloco | Tirantes do M5 (D17) | MEF da D14 |
+|---|---|---|
+| 3-2-3, 450×410×150 cm, pilar 80×80, Nd = 6000 kN | fileiras 894,1 kN; lados em y 742,3 kN; diagonais centrais 449,2 kN e externas 41,3 kN | com molas k = 720 kN/mm (reações a menos de 4 % do M1): planos x = ±37,5 cm 2113 kN contra 2237 kN do M5 (−6 %); x = ±112,5 cm 633 kN contra 1830 kN; y = ±65 cm 1604 kN contra 2334 kN (−31 %). Com apoios rígidos, a fileira do meio atrai carga e a comparação é invalidada pelo critério de 1 % |
+| 5-4, 750×280×200 cm, pilar 200×40, Nd = 9000 kN | fileira de 5: 1247,2 e 1870,8 kN; fileira de 4: 1399,7 e 1866,3 kN; diagonais de 105,1 a 420,3 kN; a rede escolhida é a da figura da fonte | — |
+
+O MEF fica abaixo do M5 em todos os planos, mais perto na direção das fileiras. A regra das
+isoáreas pesa pouco: no 5-4, dividir o pilar-parede em 9 partes iguais ao longo do comprimento,
+como na figura da fonte, muda `Σ F·l` em 1 % e o maior tirante em 7 %.
+
 ## 5. Benchmarks propostos
 
 Valores de referência serão **recalculados por nós** e conferidos contra a publicação. Diferenças
@@ -462,6 +521,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D14 | Verificação por MEF linear (gmsh + CalculiX) dos blocos rígidos: apoios rígidos nas áreas das estacas, cargas como pressão nos pilares, tração nos planos entre linhas de estacas contra o M5 (alerta acima de 10 %) e tensão média nos nós contra fcd1/fcd3; só comparação, sob demanda (§4.5) | Aprovada (Rodrigo, 16/10/2026) |
 | D15 | M5 para estacas fora de grade: contorno convexo com bielas da regra atual, estacas internas sob o pilar com biela vertical (4/5 generalizada) e nó verificado com 1,4 × R, tirantes metade no anel e metade radiais (opção B da §4.6) | Aprovada (Rodrigo, 16/10/2026) |
 | D16 | Estacas como apoios elásticos no MEF: rigidez axial opcional por estaca dada pelo usuário (sem valor padrão), cabeça rígida com mola; com molas, reações do MEF comparadas ao M1 com alerta acima de 10 % em vez do critério de validade de 1 % (§4.7, ADR-007) | Aprovada (Rodrigo, 16/10/2026) |
+| D17 | Fileiras desencontradas: isoáreas do pilar proporcionais às reações e deslocadas da excentricidade, tirantes na triangulação das estacas pelo mínimo de `Σ F·l` (critério da D12) e, entre os ótimos, o de menor `Σ F²` (§4.8) | Aprovada (Rodrigo, 17/10/2026) |
 
 ## 7. Ainda falta neste documento
 
