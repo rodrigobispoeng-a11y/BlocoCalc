@@ -504,17 +504,18 @@ Hoje o programa entrega só `As` e o diâmetro digitado, e a ancoragem supõe `A
 | Série de diâmetros | 6,3; 8; 10; 12,5; 16; 20; 25; 32; 40 mm (CA-50) | NBR 7480 (não está em NORMAS; série comercial usual, a confirmar) |
 | Agregado | Nova entrada `max_aggregate_size`, padrão 19 mm (brita 1), editável | 18.3.2.2 |
 | Tirantes: quantidade | `n = ⌈As / Aφ⌉` com o φ escolhido pelo usuário; numa barra contínua (trechos alinhados, D13), `n` do trecho mais carregado vale para a barra toda | 22.3.3 |
-| Tirantes: cabe na faixa | Uma camada: `n·φ + (n − 1)·ah ≤ 1,2·φestaca`, com `ah` da 18.3.2.2. Se não couber, ver a decisão abaixo | 22.7.2.1 a), 18.3.2.2 |
+| Tirantes: cabe na faixa | Uma camada: `n·φ + (n − 1)·ah ≤ 1,2·φestaca`, com `ah` da 18.3.2.2. Se não couber, opção (B) abaixo | 22.7.2.1 a), 18.3.2.2 |
 | Ancoragem | `ℓb,nec` com `As,calc/As,ef = As / (n·Aφ)`, o que reduz o comprimento exigido | 9.4.2.5 |
 | Malha de distribuição | Menor φ da série com espaçamento entre 100 mm (mínimo prático, padrão nosso) e o máximo da 20.1, `mín(2h; 200 mm)`; espaçamento arredondado para baixo de 10 em 10 mm | 22.7.4.1.2, 20.1 |
-| Bloco flexível | Barras de flexão com o φ do usuário e a mesma regra de espaçamento; se o espaçamento ficar abaixo de 100 mm, sobe o φ | 20.1 (D9) |
+| Bloco flexível | Barras de flexão com o φ do usuário e a mesma regra de espaçamento; se o espaçamento ficar abaixo de 100 mm, sobe o φ e refaz o cálculo, como nos tirantes | 20.1 (D9) |
 | Suspensão e armadura lateral | Sem mudança (só área ou alerta, D11) | 22.7.4.1.3, 22.7.4.1.5 |
 | Saída | Cada armadura ganha quantidade, espaçamento e área efetiva; o memorial e a tela mostram "11 φ32 (88,47 cm²)" e "φ16 c/15" | ADR-009 |
 
-**Decisão pendente: tirante que não cabe na faixa.**
+**Tirante que não cabe na faixa: opção (B), escolhida por Rodrigo em 17/10/2026.**
 - (A) Avisar e deixar o usuário subir o diâmetro. O resultado sai com o aviso.
 - (B) O programa sobe o φ pela série até caber e refaz o modelo, para o `d′` da D8 acompanhar a
-  barra real (recomendada). No B2, φ25 vira φ32. Se nem φ40 couber, aviso como em (A).
+  barra real. No B2, φ25 vira φ32. Se nem φ40 couber, aviso como em (A). **Escolhida.** As
+  barras de flexão do bloco flexível seguem a mesma regra (o φ sobe e o modelo é refeito).
 - (C) Aceitar segunda camada, com `d′` no centroide do grupo de barras e `av` da 18.3.2.2.
 
 ## 5. Benchmarks propostos
@@ -559,7 +560,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D15 | M5 para estacas fora de grade: contorno convexo com bielas da regra atual, estacas internas sob o pilar com biela vertical (4/5 generalizada) e nó verificado com 1,4 × R, tirantes metade no anel e metade radiais (opção B da §4.6) | Aprovada (Rodrigo, 16/10/2026) |
 | D16 | Estacas como apoios elásticos no MEF: rigidez axial opcional por estaca dada pelo usuário (sem valor padrão), cabeça rígida com mola; com molas, reações do MEF comparadas ao M1 com alerta acima de 10 % em vez do critério de validade de 1 % (§4.7, ADR-007) | Aprovada (Rodrigo, 16/10/2026) |
 | D17 | Fileiras desencontradas: isoáreas do pilar proporcionais às reações e deslocadas da excentricidade, tirantes na triangulação das estacas pelo mínimo de `Σ F·l` (critério da D12) e, entre os ótimos, o de menor `Σ F²` (§4.8) | Aprovada (Rodrigo, 17/10/2026) |
-| D18 | Escolha de barras: quantidade pelo φ do usuário, uma camada na faixa 1,2·φ com espaçamento da 18.3.2.2, ancoragem com a área efetiva, malha com φ mínimo e espaçamento entre 100 mm e o máximo da 20.1 (§4.9) | Proposta (Claude, 17/10/2026) |
+| D18 | Escolha de barras: quantidade pelo φ do usuário, uma camada na faixa 1,2·φ com espaçamento da 18.3.2.2, ancoragem com a área efetiva, malha com φ mínimo e espaçamento entre 100 mm e o máximo da 20.1 (§4.9) | Proposta (Claude, 17/10/2026); opção (B) para tirante que não cabe escolhida por Rodrigo em 17/10/2026 |
 
 ## 7. Ainda falta neste documento
 
