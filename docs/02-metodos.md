@@ -421,7 +421,7 @@ ele (a NBR 6122:2019 não fixa rigidez de estaca), então o programa não invent
 | Ajuda na tela | Texto de apoio, sem valor padrão: para estaca de ponta, `k ≈ Ecs·A/L` só do fuste é um limite superior; estacas de atrito são mais flexíveis | — |
 | Auditoria | Os valores de `k` usados entram nos parâmetros da trilha do MEF | CLAUDE.md §8 |
 
-## 4.8 M5 para estacas em fileiras desencontradas (especificação, D17 proposta)
+## 4.8 M5 para estacas em fileiras desencontradas (especificação, D17 aprovada)
 
 Objetivo: levar o M5 aos estaqueamentos em fileiras paralelas deslocadas entre si (5-4, 3-2-3,
 4-3-4, 4-2-4 e os demais padrões de 7 a 30 estacas do CRSI), que hoje são recusados porque não
@@ -521,7 +521,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D14 | Verificação por MEF linear (gmsh + CalculiX) dos blocos rígidos: apoios rígidos nas áreas das estacas, cargas como pressão nos pilares, tração nos planos entre linhas de estacas contra o M5 (alerta acima de 10 %) e tensão média nos nós contra fcd1/fcd3; só comparação, sob demanda (§4.5) | Aprovada (Rodrigo, 16/10/2026) |
 | D15 | M5 para estacas fora de grade: contorno convexo com bielas da regra atual, estacas internas sob o pilar com biela vertical (4/5 generalizada) e nó verificado com 1,4 × R, tirantes metade no anel e metade radiais (opção B da §4.6) | Aprovada (Rodrigo, 16/10/2026) |
 | D16 | Estacas como apoios elásticos no MEF: rigidez axial opcional por estaca dada pelo usuário (sem valor padrão), cabeça rígida com mola; com molas, reações do MEF comparadas ao M1 com alerta acima de 10 % em vez do critério de validade de 1 % (§4.7, ADR-007) | Aprovada (Rodrigo, 16/10/2026) |
-| D17 | Fileiras desencontradas: isoáreas do pilar proporcionais às reações e deslocadas da excentricidade, tirantes na triangulação das estacas pelo mínimo de `Σ F·l` (critério da D12) e, entre os ótimos, o de menor `Σ F²` (§4.8) | Proposta (Claude, 17/10/2026) |
+| D17 | Fileiras desencontradas: isoáreas do pilar proporcionais às reações e deslocadas da excentricidade, tirantes na triangulação das estacas pelo mínimo de `Σ F·l` (critério da D12) e, entre os ótimos, o de menor `Σ F²` (§4.8) | Aprovada (Rodrigo, 17/10/2026) |
 
 ## 7. Ainda falta neste documento
 
