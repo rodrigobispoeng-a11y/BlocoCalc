@@ -19,6 +19,7 @@ from PySide6.QtCore import QMarginsF, QObject, Signal
 from PySide6.QtGui import (
     QAction,
     QCloseEvent,
+    QImageReader,
     QKeySequence,
     QPageLayout,
     QPageSize,
@@ -48,7 +49,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from blococalc.analysis import analyze, fem_verification, refresh_project
+from blococalc.analysis import analyze, fem_verification, refresh_project, strut_tie_layout
 from blococalc.app.view3d import View3D
 from blococalc.persistence.project import EXTENSION, ProjectFileError, load_project, save_project
 from blococalc.report import calculation_report
@@ -79,7 +80,8 @@ KNM = 1e6  # N·mm
 # Exemplo inicial: benchmark B1 (Macedo 2022, §6.1), Fd = 980 kN.
 _DEFAULT_PILES = (("E1", -600.0, -600.0), ("E2", 600.0, -600.0), ("E3", 600.0, 600.0),
                   ("E4", -600.0, 600.0))  # fmt: skip
-_PILE_HEADERS = ("Estaca", "x [mm]", "y [mm]", "φ ou lado [mm]", "Forma", "k [kN/mm]")
+_PILE_HEADERS = ("Estaca", "x [mm]", "y [mm]", "φ/lado [mm]", "Forma", "k [kN/mm]")
+_SIZE_HELP = "Diâmetro da estaca circular ou lado da estaca quadrada [mm]."
 _STIFFNESS_HELP = (
     "Rigidez axial da estaca para a conferência por MEF (D16), vinda do projeto geotécnico "
     "(prova de carga ou análise de recalque). Vazia = apoio rígido. Não há valor normativo: "
@@ -195,9 +197,10 @@ class MainWindow(QMainWindow):
         self.piles = _table(
             _PILE_HEADERS, [(*pile, 400.0, "circular", "") for pile in _DEFAULT_PILES]
         )
-        stiffness_header = self.piles.horizontalHeaderItem(_PILE_HEADERS.index("k [kN/mm]"))
-        if stiffness_header is not None:
-            stiffness_header.setToolTip(_STIFFNESS_HELP)
+        for column, help_text in ((3, _SIZE_HELP), (5, _STIFFNESS_HELP)):
+            header = self.piles.horizontalHeaderItem(column)
+            if header is not None:
+                header.setToolTip(help_text)
         self.summary = QPlainTextEdit(readOnly=True)
         self.reactions_table = QTableWidget()
         self.checks_table = QTableWidget()
@@ -623,9 +626,15 @@ class MainWindow(QMainWindow):
 
     def write_report(self, path: Path) -> bool:
         """Grava o memorial em PDF A4; só com resultado atual das entradas da tela."""
+        drawings = self.svg_supported()
         try:
             project, warnings = refresh_project(self.project())
-            html = calculation_report(project, date.today())
+            layouts = {
+                case.id: layout
+                for case in project.loads.cases
+                if drawings and (layout := strut_tie_layout(project, case.id)) is not None
+            }
+            html = calculation_report(project, date.today(), layouts, drawings=drawings)
         except ValueError as error:
             self.status.setText(f"Não foi possível gerar o memorial: {error}")
             return False
@@ -643,8 +652,15 @@ class MainWindow(QMainWindow):
         if not path.is_file() or path.stat().st_size == 0:
             self.status.setText(f"Não foi possível gravar o memorial em {path}.")
             return False
+        if not drawings:
+            warnings = (*warnings, "A Qt desta instalação não lê SVG: memorial sem os desenhos.")
         self.status.setText(" ".join((f"Memorial salvo em {path}.", *warnings)))
         return True
+
+    @staticmethod
+    def svg_supported() -> bool:
+        """Os desenhos do memorial (ADR-008) dependem do plugin de imagem SVG da Qt."""
+        return b"svg" in {bytes(f.data()) for f in QImageReader.supportedImageFormats()}
 
     def run_fem(self) -> None:
         """Roda o MEF em segundo plano; o formulário fica bloqueado até o fim."""

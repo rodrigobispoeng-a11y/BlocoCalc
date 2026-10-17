@@ -26,6 +26,7 @@ STRUT_COLOR = "#c0392b"
 TIE_COLOR = "#1f4e9c"
 _LINE = "#000000"
 _LIGHT = "#9a9a9a"
+_SECTION_TEXT = 0.07  # cortes saem menores na página que as plantas
 _PIXELS = 2400  # maior lado da imagem; o memorial reduz na página (cerca de 380 ppi)
 KN = 1e3  # N
 
@@ -33,8 +34,8 @@ KN = 1e3  # N
 class _Sheet:
     """Folha com coordenadas do bloco (u para a direita, v para cima) em mm."""
 
-    def __init__(self, size: float) -> None:
-        self.text_size = 0.032 * size
+    def __init__(self, size: float, text: float = 0.032) -> None:
+        self.text_size = text * size
         self.stroke = size / 500.0
         self.items: list[str] = []
         self.points: list[tuple[float, float]] = []
@@ -145,7 +146,7 @@ def form_section(geometry: GeometryInput, axis: Axis, tie_height: float) -> str:
     cap = geometry.cap
     length = cap.lx if axis == "x" else cap.ly
     half, h = length / 2, cap.h
-    sheet = _Sheet(max(length, 1.6 * h))
+    sheet = _Sheet(max(length, 1.6 * h), _SECTION_TEXT)
     gap = 2.5 * sheet.text_size
     stub = 0.3 * h
     sheet.rect(-half, 0.0, length, h)
@@ -207,7 +208,7 @@ def model_section(geometry: GeometryInput, layout: StrutTieLayout, axis: Axis) -
     """Bielas e tirantes projetados no plano vertical da direção `axis`, com o braço z [cm]."""
     cap = geometry.cap
     length = cap.lx if axis == "x" else cap.ly
-    sheet = _Sheet(max(length, 1.6 * cap.h))
+    sheet = _Sheet(max(length, 1.6 * cap.h), _SECTION_TEXT)
     sheet.rect(-length / 2, 0.0, length, cap.h, _LIGHT)
     nodes = {n.id: ((n.x if axis == "x" else n.y), n.z) for n in layout.nodes}
     drawn: set[tuple[LayoutMemberKind, tuple[float, ...]]] = set()

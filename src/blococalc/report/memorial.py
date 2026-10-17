@@ -1,17 +1,21 @@
 """Memorial de cálculo em HTML simples (ADR-005).
 
-Só títulos, parágrafos e tabelas, para o `QTextDocument` da tela imprimir em PDF. Unidades
-da tela: kN, kN·m, mm, MPa e cm². Recebe o projeto já conferido por
-`analysis.refresh_project`; não recalcula nada.
+Títulos, parágrafos, tabelas e desenhos em SVG embutido (ADR-008), para o `QTextDocument`
+da tela imprimir em PDF. Unidades da tela: kN, kN·m, mm, MPa e cm². Recebe o projeto já
+conferido por `analysis.refresh_project` e os modelos de bielas e tirantes de cada caso; não
+recalcula nada.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+import base64
+import re
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from html import escape
 
-from blococalc.schemas import AnalysisResult, Check, CheckStatus, Project
+from blococalc.report.drawings import form_plan, form_section, model_plan, model_section
+from blococalc.schemas import AnalysisResult, Check, CheckStatus, Project, StrutTieLayout
 
 KN = 1e3  # N
 KNM = 1e6  # N·mm
@@ -20,12 +24,24 @@ _COMBINATIONS = {"normal": "normal", "special": "especial", "exceptional": "exce
 _STYLE = (
     "body{font-family:sans-serif;font-size:9pt}h1{font-size:15pt}h2{font-size:12pt}"
     "table{border-collapse:collapse}th,td{border:1px solid #888;padding:2px 4px}"
-    "th{background:#ddd}.falha{background:#f6c6c6}"
+    "th{background:#ddd}.falha{background:#f6c6c6}.desenho td{border:none}"
 )
+_PLAN_WIDTH = 420  # largura dos desenhos na página (o PDF reduz a imagem de 2400 px)
+_SECTION_WIDTH = 270
 
 
-def calculation_report(project: Project, issued: date) -> str:
-    """Memorial com entradas, método, resultados e trilha de auditoria (ADR-005, item 2)."""
+def calculation_report(
+    project: Project,
+    issued: date,
+    layouts: Mapping[str, StrutTieLayout] | None = None,
+    *,
+    drawings: bool = True,
+) -> str:
+    """Memorial com entradas, método, resultados e trilha de auditoria (ADR-005, item 2).
+
+    Com `drawings`, a seção 1 traz a forma e a seção 3 o modelo de bielas e tirantes de cada
+    caso presente em `layouts` (ADR-008); blocos flexíveis não têm modelo.
+    """
     result = project.result
     if result is None:
         raise ValueError("Calcule o bloco antes de gerar o memorial.")
@@ -35,13 +51,14 @@ def calculation_report(project: Project, issued: date) -> str:
         _paragraph(f"Emitido em {issued:%d/%m/%Y} pelo BlocoCalc {result.audit.app_version}."),
         _paragraph(project.notes) if project.notes else "",
         f"<p><b>{escape(result.disclaimer)}</b></p>",
-        *_inputs(project),
+        *_inputs(project, drawings),
         "<h2>3. Método</h2>",
         _paragraph(
             f"Bloco {'rígido' if result.rigid else 'flexível'} pela NBR 6118:2023, 22.7.1. "
             f"Método: {result.audit.method}."
         ),
         _list(result.audit.assumptions),
+        *(_model_drawings(project, result, layouts or {}) if drawings else ()),
         *_results(result, 4),
     ]
     if project.fem_result is not None:
@@ -53,9 +70,19 @@ def calculation_report(project: Project, issued: date) -> str:
     return "\n".join(p for p in parts if p)
 
 
-def _inputs(project: Project) -> list[str]:
+def _inputs(project: Project, drawings: bool) -> list[str]:
     g, m, loads, d = project.geometry, project.materials, project.loads, project.detailing
     cap = g.cap
+    tie_height = cap.cover + d.bar_diameter / 2.0  # D8
+    forms = [
+        "<h3>Forma (cotas em cm)</h3>",
+        _figure(form_plan(g), _PLAN_WIDTH, "Planta de forma"),
+        _pair(
+            (form_section(g, "x", tie_height), "Corte A-A (plano y = 0)"),
+            (form_section(g, "y", tie_height), "Corte B-B (plano x = 0)"),
+        ),
+        _paragraph("Linha azul tracejada: eixo dos tirantes, a cobrimento + φ/2 da estaca (D8)."),
+    ]
     return [
         "<h2>1. Entradas</h2>",
         _table(
@@ -96,6 +123,7 @@ def _inputs(project: Project) -> list[str]:
                 for c in g.columns
             ],
         ),
+        *(forms if drawings else ()),
         "<h2>2. Casos de cálculo e detalhamento</h2>",
         _table(
             (
@@ -173,6 +201,55 @@ def _results(result: AnalysisResult, first: int | None) -> list[str]:
         ]
     parts += [title(3, "Alertas"), _list(result.warnings or ("Nenhum.",))]
     return parts
+
+
+def _model_drawings(
+    project: Project, result: AnalysisResult, layouts: Mapping[str, StrutTieLayout]
+) -> list[str]:
+    """Bielas e tirantes de cada caso em planta e em corte (ADR-008)."""
+    g = project.geometry
+    parts = []
+    for case in project.loads.cases:
+        layout = layouts.get(case.id)
+        if layout is None:
+            continue
+        reactions = [r for r in result.reactions if r.case_id == case.id]
+        parts += [
+            # Cada caso numa página nova: o título não fica separado dos desenhos.
+            f"<h3 style='page-break-before:always'>Modelo de bielas e tirantes: caso "
+            f"{escape(case.id)}</h3>",
+            _figure(model_plan(g, layout, reactions), _PLAN_WIDTH, "Planta do modelo"),
+            _pair(
+                (model_section(g, layout, "x"), "Projeção no plano xz"),
+                (model_section(g, layout, "y"), "Projeção no plano yz"),
+            ),
+            _paragraph(
+                "Bielas em vermelho tracejado e tirantes em azul, com as forças de cálculo; "
+                "reações das estacas na planta, em kN. Nos cortes, a cota é o braço z entre o "
+                "eixo dos tirantes e os nós superiores das bielas, em cm."
+            ),
+        ]
+    return parts
+
+
+def _image(svg: str, width: int) -> str:
+    """SVG embutido no HTML; a altura segue a proporção do desenho."""
+    size = re.match(r'<svg [^>]*width="(\d+)" height="(\d+)"', svg)
+    height = round(width * int(size[2]) / int(size[1])) if size else width
+    data = base64.b64encode(svg.encode()).decode("ascii")
+    return f"<img src='data:image/svg+xml;base64,{data}' width='{width}' height='{height}'>"
+
+
+def _figure(svg: str, width: int, caption: str) -> str:
+    return f"<p align='center'>{_image(svg, width)}<br>{escape(caption)}</p>"
+
+
+def _pair(*figures: tuple[str, str]) -> str:
+    cells = "".join(
+        f"<td align='center'>{_image(svg, _SECTION_WIDTH)}<br>{escape(caption)}</td>"
+        for svg, caption in figures
+    )
+    return f"<table class='desenho' align='center'><tr>{cells}</tr></table>"
 
 
 def _checks(checks: Sequence[Check]) -> str:

@@ -473,6 +473,25 @@ def test_report_is_written_as_pdf(app: object, tmp_path: Path) -> None:
     assert window.status.text() == f"Memorial salvo em {path}."
 
 
+def test_report_has_drawings_when_qt_reads_svg(app: object, tmp_path: Path) -> None:
+    # ADR-008: os desenhos vão no PDF como imagens; sem o formato SVG na Qt, sai sem eles.
+    window = MainWindow()
+    window.calculate()
+    assert window.write_report(tmp_path / "com.pdf")
+    assert "desenhos" not in window.status.text()
+    with_drawings = (tmp_path / "com.pdf").stat().st_size
+    window.svg_supported = lambda: False  # type: ignore[method-assign]
+    assert window.write_report(tmp_path / "sem.pdf")
+    assert "sem os desenhos" in window.status.text()
+    assert (tmp_path / "sem.pdf").stat().st_size < with_drawings / 2
+
+
+def test_pile_size_header_fits(app: object) -> None:
+    header = MainWindow().piles.horizontalHeaderItem(3)
+    assert header is not None and header.text() == "φ/lado [mm]"
+    assert "quadrada" in header.toolTip()
+
+
 def test_report_recomputes_stale_result(app: object, tmp_path: Path) -> None:
     window = MainWindow()
     window.calculate()
