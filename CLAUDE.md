@@ -25,7 +25,7 @@ src/blococalc/
 ├── fem/           # adapters gmsh/ccx (D14; ccx externo: parâmetro, BLOCOCALC_CCX ou PATH)
 ├── viz/           # cena 3D em malhas PyVista, sem Qt (ADR-006)
 ├── persistence/   # arquivo de projeto .bloco (ADR-004)
-├── report/        # memorial de cálculo em HTML (ADR-005) — função pura
+├── report/        # memorial de cálculo em HTML e desenhos SVG (ADR-005, 008) — função pura
 └── app/           # PySide6: única camada que conhece Qt (python -m blococalc.app)
 tests/             # unit, golden, benchmark
 ```
