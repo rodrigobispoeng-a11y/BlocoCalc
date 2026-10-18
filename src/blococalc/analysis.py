@@ -354,6 +354,8 @@ def _with_mesh_bars(item: Reinforcement, cap: Cap) -> Reinforcement:
     """
     if item.kind not in (ReinforcementKind.DISTRIBUTION, ReinforcementKind.FLEXURE):
         return item
+    if not math.isfinite(item.area_required):
+        return item  # seção sem solução (D9): a verificação já falha, não há barras a escolher
     width = cap.ly if item.direction[0] else cap.lx
     if item.kind is ReinforcementKind.DISTRIBUTION:
         phi, spacing = mesh_bars(item.area_required, width, cap.h, BAR_SERIES[0])
