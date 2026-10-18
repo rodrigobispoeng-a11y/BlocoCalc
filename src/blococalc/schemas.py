@@ -258,10 +258,8 @@ class Reinforcement(_Contract):
 class HookShape(StrEnum):
     """Gancho nas pontas das barras (NBR 6118:2023, 9.4.2.3; D19)."""
 
-    RIGHT_ANGLE = "right_angle"  # 90° com ponta reta de 8φ
-    RIGHT_ANGLE_TO_TOP = "right_angle_to_top"  # 90° com a ponta até o topo menos o cobrimento
-    SEMICIRCULAR = "semicircular"  # 180° com ponta reta de 2φ
-    NONE = "none"
+    RIGHT_ANGLE = "right_angle"  # 90° com ponta reta de 8φ, virada para cima
+    NONE = "none"  # entrada sem ganchos
 
 
 Point = tuple[float, float]
