@@ -53,6 +53,7 @@ from blococalc.analysis import analyze, fem_verification, refresh_project, strut
 from blococalc.app.view3d import View3D
 from blococalc.persistence.project import EXTENSION, ProjectFileError, load_project, save_project
 from blococalc.report import bar_label, calculation_report
+from blococalc.report.dxf import cap_drawing
 from blococalc.schemas import (
     AggressivenessClass,
     AnalysisResult,
@@ -432,6 +433,7 @@ class MainWindow(QMainWindow):
             ("&Salvar", key.Save, self.save),
             ("Salvar &como...", key.SaveAs, self.save_as),
             ("Gerar &memorial (PDF)...", key.Print, self.export_report),
+            ("Exportar &desenhos (DXF)...", key.UnknownKey, self.export_drawings),
             ("Sai&r", key.Quit, self.close),
         )
         for text, shortcut, slot in entries:
@@ -666,6 +668,41 @@ class MainWindow(QMainWindow):
         if not drawings:
             warnings = (*warnings, "A Qt desta instalação não lê SVG: memorial sem os desenhos.")
         self.status.setText(" ".join((f"Memorial salvo em {path}.", *warnings)))
+        return True
+
+    def export_drawings(self) -> bool:
+        """Pergunta onde salvar e grava a forma e a armação em DXF (ADR-011)."""
+        stem = self.path.stem if self.path else self.name.text().strip() or _NEW_NAME
+        start = (self.path.parent if self.path else Path()) / f"{stem} - desenhos.dxf"
+        name, _ = QFileDialog.getSaveFileName(
+            self, "Exportar desenhos", str(start), "Desenho DXF (*.dxf)"
+        )
+        if not name:
+            return False
+        path = Path(name)
+        if path.suffix.lower() != ".dxf":
+            path = path.with_name(path.name + ".dxf")
+        return self.write_drawings(path)
+
+    def write_drawings(self, path: Path) -> bool:
+        """Grava os desenhos em DXF R12; só com resultado atual das entradas da tela."""
+        try:
+            project, warnings = refresh_project(self.project())
+            data = cap_drawing(project)
+        except ValueError as error:
+            self.status.setText(f"Não foi possível exportar os desenhos: {error}")
+            return False
+        self.result, self.fem_result = project.result, project.fem_result
+        self._show(project.result)
+        self._show_fem(project.fem_result)
+        try:
+            path.write_bytes(data)
+        except OSError as error:
+            self.status.setText(f"Não foi possível gravar os desenhos em {path}: {error}")
+            return False
+        if project.result is not None and not project.result.bar_positions:
+            warnings = (*warnings, "Sem posições de armação: o DXF traz só a forma.")
+        self.status.setText(" ".join((f"Desenhos salvos em {path}.", *warnings)))
         return True
 
     @staticmethod

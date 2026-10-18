@@ -542,6 +542,48 @@ def test_report_from_menu_adds_extension(app: object, dialogs: FakeDialogs, tmp_
     assert (tmp_path / "memorial.pdf").read_bytes().startswith(b"%PDF")
 
 
+def test_drawings_are_written_as_dxf(app: object, tmp_path: Path) -> None:
+    # ADR-011: forma, armação e tabela de aço num DXF R12.
+    window = MainWindow()
+    window.calculate()
+    path = tmp_path / "b1 - desenhos.dxf"
+    assert window.write_drawings(path)
+    content = path.read_bytes()
+    assert content.startswith(b"  0\r\nSECTION\r\n")
+    assert b"ARM-TIRANTE" in content
+    assert content.endswith(b"EOF\r\n")
+    assert window.status.text() == f"Desenhos salvos em {path}."
+
+
+def test_drawings_recompute_stale_result(app: object, tmp_path: Path) -> None:
+    window = MainWindow()
+    window.calculate()
+    window.materials["fck"].setValue(30.0)
+    assert window.write_drawings(tmp_path / "d.dxf")
+    assert window.result == analyze(*window.inputs())
+    assert "recalculado" in window.status.text()
+
+
+def test_drawings_need_calculation(app: object, tmp_path: Path) -> None:
+    window = MainWindow()
+    assert not window.write_drawings(tmp_path / "d.dxf")
+    assert not (tmp_path / "d.dxf").exists()
+    assert "Calcule" in window.status.text()
+
+
+def test_drawings_from_menu_add_extension(
+    app: object, dialogs: FakeDialogs, tmp_path: Path
+) -> None:
+    window = MainWindow()
+    window.calculate()
+    dialogs.file = str(tmp_path / "desenhos")
+    menu = window.menuBar().findChild(QtWidgets.QMenu)
+    assert menu is not None
+    action = next(a for a in menu.actions() if a.text() == "Exportar &desenhos (DXF)...")
+    action.trigger()
+    assert (tmp_path / "desenhos.dxf").read_bytes().endswith(b"EOF\r\n")
+
+
 # --------------------------------------------------------------------------------------
 # Aba 3D (ADR-006)
 # --------------------------------------------------------------------------------------
