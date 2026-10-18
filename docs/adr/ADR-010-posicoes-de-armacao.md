@@ -1,6 +1,6 @@
 # ADR-010 — Posições de armação no resultado (schemas v7)
 
-- Status: proposta
+- Status: aceita (Rodrigo, 18/10/2026)
 - Contexto: a D19 (docs/02-metodos.md §4.10) desenha a armação e monta a tabela de aço. Para
   isso é preciso saber onde fica cada barra, e só a análise sabe quais tirantes formam uma linha
   de barras contínua (D13). `Reinforcement` (ADR-002, ADR-009) guarda área, φ, quantidade e
