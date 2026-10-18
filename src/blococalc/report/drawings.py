@@ -10,6 +10,7 @@ from __future__ import annotations
 import itertools
 import math
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from html import escape
 from typing import Literal
 
@@ -35,65 +36,124 @@ _LIGHT = "#9a9a9a"
 _SECTION_TEXT = 0.07  # cortes saem menores na página que as plantas
 _PIXELS = 2400  # maior lado da imagem; o memorial reduz na página (cerca de 380 ppi)
 KN = 1e3  # N
+# Camadas de CAD (ADR-011); a cor do traço dá a camada quando o desenho não diz outra.
+FORM_LAYER = "FORMA"
+PILE_LAYER = "ESTACAS"
+TIE_LAYER = "ARM-TIRANTE"
+MESH_LAYER = "ARM-MALHA"
+DIMENSION_LAYER = "COTAS"
+TEXT_LAYER = "TEXTOS"
+MODEL_LAYER = "MODELO"  # bielas e tirantes do modelo: só no memorial
+_LAYERS = {
+    _LINE: FORM_LAYER,
+    _LIGHT: FORM_LAYER,
+    TIE_COLOR: TIE_LAYER,
+    MESH_COLOR: MESH_LAYER,
+    STRUT_COLOR: MODEL_LAYER,
+}
 
 
-class _Sheet:
-    """Folha com coordenadas do bloco (u para a direita, v para cima) em mm."""
+@dataclass(frozen=True)
+class Line:
+    a: tuple[float, float]
+    b: tuple[float, float]
+    color: str
+    width: float
+    dash: str
+    layer: str
+
+
+@dataclass(frozen=True)
+class Path:
+    points: tuple[tuple[float, float], ...]
+    color: str
+    fill: str
+    closed: bool
+    layer: str
+
+
+@dataclass(frozen=True)
+class Circle:
+    center: tuple[float, float]
+    radius: float
+    color: str
+    filled: bool  # seção de barra: cheio e sem contorno
+    layer: str
+
+
+@dataclass(frozen=True)
+class Text:
+    at: tuple[float, float]
+    label: str
+    color: str
+    size: float
+    vertical: bool
+    layer: str
+
+
+@dataclass(frozen=True)
+class Mask:
+    """Fundo branco sob uma etiqueta; só faz sentido na imagem (ADR-011)."""
+
+    at: tuple[float, float]  # canto inferior esquerdo
+    width: float
+    height: float
+
+
+Primitive = Line | Path | Circle | Text | Mask
+
+
+class Sheet:
+    """Folha com coordenadas do bloco (u para a direita, v para cima) em mm.
+
+    Guarda primitivas neutras, cada uma com a camada de CAD (ADR-011); `render` gera o SVG.
+    """
 
     def __init__(self, size: float, text: float = 0.032) -> None:
         self.text_size = text * size
         self.stroke = size / 500.0
-        self.items: list[str] = []
+        self.items: list[Primitive] = []
         self.points: list[tuple[float, float]] = []
 
-    def line(self, a: tuple[float, float], b: tuple[float, float], color: str = _LINE,
-             width: float = 1.0, dash: str = "") -> None:  # fmt: skip
+    def line(  # noqa: PLR0913, PLR0917 - extremos, cor, estilo e camada
+        self, a: tuple[float, float], b: tuple[float, float], color: str = _LINE,
+        width: float = 1.0, dash: str = "", layer: str = "",
+    ) -> None:  # fmt: skip
         self.points += [a, b]
-        style = f' stroke-dasharray="{dash}"' if dash else ""
-        self.items.append(
-            f'<line x1="{a[0]:.1f}" y1="{-a[1]:.1f}" x2="{b[0]:.1f}" y2="{-b[1]:.1f}" '
-            f'stroke="{color}" stroke-width="{width * self.stroke:.2f}"{style}/>'
-        )
+        self.items.append(Line(a, b, color, width, dash, layer or _LAYERS[color]))
 
     def polyline(self, points: Sequence[tuple[float, float]], color: str = _LINE,
-                 fill: str = "none", closed: bool = False) -> None:  # fmt: skip
+                 fill: str = "none", closed: bool = False, layer: str = "") -> None:  # fmt: skip
         self.points += points
-        tag = "polygon" if closed else "polyline"
-        coords = " ".join(f"{u:.1f},{-v:.1f}" for u, v in points)
-        self.items.append(
-            f'<{tag} points="{coords}" fill="{fill}" stroke="{color}" '
-            f'stroke-width="{self.stroke:.2f}"/>'
-        )
+        self.items.append(Path(tuple(points), color, fill, closed, layer or _LAYERS[color]))
 
-    def rect(  # noqa: PLR0913, PLR0917 - retângulo, cor e preenchimento
+    def rect(  # noqa: PLR0913, PLR0917 - retângulo, cor, preenchimento e camada
         self, u: float, v: float, width: float, height: float, color: str = _LINE,
-        fill: str = "none",
+        fill: str = "none", layer: str = "",
     ) -> None:  # fmt: skip
         corners = [(u, v), (u + width, v), (u + width, v + height), (u, v + height)]
-        self.polyline(corners, color, fill, closed=True)
+        self.polyline(corners, color, fill, closed=True, layer=layer)
 
-    def circle(self, u: float, v: float, radius: float, color: str = _LINE) -> None:
-        self.points += [(u - radius, v - radius), (u + radius, v + radius)]
-        self.items.append(
-            f'<circle cx="{u:.1f}" cy="{-v:.1f}" r="{radius:.1f}" fill="none" '
-            f'stroke="{color}" stroke-width="{self.stroke:.2f}"/>'
-        )
+    def circle(  # noqa: PLR0913, PLR0917 - centro, raio, cor e estilo
+        self, u: float, v: float, radius: float, color: str = _LINE, filled: bool = False,
+        layer: str = "",
+    ) -> None:  # fmt: skip
+        if not filled:  # a seção de barra não mexe nos limites, como antes
+            self.points += [(u - radius, v - radius), (u + radius, v + radius)]
+        self.items.append(Circle((u, v), radius, color, filled, layer or _LAYERS[color]))
+
+    def mask(self, u: float, v: float, width: float, height: float) -> None:
+        self.items.append(Mask((u, v), width, height))
 
     def text(  # noqa: PLR0913, PLR0917 - posição, texto e estilo
         self, u: float, v: float, label: str, color: str = _LINE, scale: float = 1.0,
-        vertical: bool = False,
+        vertical: bool = False, layer: str = TEXT_LAYER,
     ) -> None:  # fmt: skip
         size = self.text_size * scale
         half = max(size, _CHAR_WIDTH * size * len(label) / 2)
         reach = (size, half) if vertical else (half, size)
         self.points += [(u - reach[0], v - reach[1]), (u + reach[0], v + reach[1])]
-        turn = f' transform="rotate(-90 {u:.1f} {-v:.1f})"' if vertical else ""
-        # Linha de base abaixo do centro: o renderizador da Qt ignora dominant-baseline.
-        self.items.append(
-            f'<text x="{u:.1f}" y="{-v + 0.35 * size:.1f}" font-size="{size:.1f}" '
-            f'font-family="sans-serif" text-anchor="middle" fill="{color}"{turn}>'
-            f"{escape(label)}</text>"
-        )
+        self.items.append(Text((u, v), label, color, size, vertical, layer))
 
     def dimension(self, a: float, b: float, at: float, horizontal: bool) -> None:
         """Cota de `a` a `b` [mm] na linha `at`, com o valor em cm no meio."""
@@ -104,16 +164,17 @@ class _Sheet:
         def point(s: float, t: float) -> tuple[float, float]:
             return (s, t) if horizontal else (t, s)
 
-        self.line(point(a, at), point(b, at), width=0.6)
+        self.line(point(a, at), point(b, at), width=0.6, layer=DIMENSION_LAYER)
         for s in (a, b):
-            self.line(point(s - tick / 2, at - tick / 2), point(s + tick / 2, at + tick / 2))
+            ends = point(s - tick / 2, at - tick / 2), point(s + tick / 2, at + tick / 2)
+            self.line(*ends, layer=DIMENSION_LAYER)
         offset = 0.8 * self.text_size
         if horizontal or b - a > 3.0 * self.text_size:
             u, v = point((a + b) / 2, at + offset if horizontal else at - offset)
-            self.text(u, v, _cm(b - a), scale=0.85, vertical=not horizontal)
+            self.text(u, v, _cm(b - a), scale=0.85, vertical=not horizontal, layer=DIMENSION_LAYER)
         else:  # cota curta: valor deitado ao lado da linha
             outward = 1.6 * self.text_size if at >= 0 else -1.6 * self.text_size
-            self.text(at + outward, (a + b) / 2, _cm(b - a), scale=0.85)
+            self.text(at + outward, (a + b) / 2, _cm(b - a), scale=0.85, layer=DIMENSION_LAYER)
 
     def render(self) -> str:
         us, vs = [p[0] for p in self.points], [p[1] for p in self.points]
@@ -126,15 +187,62 @@ class _Sheet:
             f'<svg xmlns="http://www.w3.org/2000/svg" width="{width * scale:.0f}" '
             f'height="{height * scale:.0f}" viewBox="{left:.1f} {-top:.1f} {width:.1f} '
             f'{height:.1f}"><rect x="{left:.1f}" y="{-top:.1f}" width="{width:.1f}" '
-            f'height="{height:.1f}" fill="#ffffff"/>' + "".join(self.items) + "</svg>"
+            f'height="{height:.1f}" fill="#ffffff"/>'
+            + "".join(self._svg(item) for item in self.items)
+            + "</svg>"
         )
+
+    def _svg(self, item: Primitive) -> str:
+        match item:
+            case Line(a, b, color, width, dash):
+                style = f' stroke-dasharray="{dash}"' if dash else ""
+                return (
+                    f'<line x1="{a[0]:.1f}" y1="{-a[1]:.1f}" x2="{b[0]:.1f}" y2="{-b[1]:.1f}" '
+                    f'stroke="{color}" stroke-width="{width * self.stroke:.2f}"{style}/>'
+                )
+            case Path(points, color, fill, closed):
+                tag = "polygon" if closed else "polyline"
+                coords = " ".join(f"{u:.1f},{-v:.1f}" for u, v in points)
+                return (
+                    f'<{tag} points="{coords}" fill="{fill}" stroke="{color}" '
+                    f'stroke-width="{self.stroke:.2f}"/>'
+                )
+            case Circle((u, v), radius, color, True):
+                return (
+                    f'<circle cx="{u:.1f}" cy="{-v:.1f}" r="{radius:.1f}" '
+                    f'fill="{color}" stroke="none"/>'
+                )
+            case Circle((u, v), radius, color, False):
+                return (
+                    f'<circle cx="{u:.1f}" cy="{-v:.1f}" r="{radius:.1f}" fill="none" '
+                    f'stroke="{color}" stroke-width="{self.stroke:.2f}"/>'
+                )
+            case Text((u, v), label, color, size, vertical):
+                turn = f' transform="rotate(-90 {u:.1f} {-v:.1f})"' if vertical else ""
+                # Linha de base abaixo do centro: o renderizador da Qt ignora dominant-baseline.
+                return (
+                    f'<text x="{u:.1f}" y="{-v + 0.35 * size:.1f}" font-size="{size:.1f}" '
+                    f'font-family="sans-serif" text-anchor="middle" fill="{color}"{turn}>'
+                    f"{escape(label)}</text>"
+                )
+            case Mask((u, v), width, height):
+                return (
+                    f'<rect x="{u:.1f}" y="{-v - height:.1f}" width="{width:.1f}" '
+                    f'height="{height:.1f}" fill="#ffffff" stroke="none"/>'
+                )
+        raise TypeError(item)
 
 
 def form_plan(geometry: GeometryInput) -> str:
     """Planta de forma: bloco, estacas e pilares, com cotas totais e das estacas [cm]."""
+    return form_plan_sheet(geometry).render()
+
+
+def form_plan_sheet(geometry: GeometryInput) -> Sheet:
+    """Folha de `form_plan`, com as primitivas e as camadas para o DXF (ADR-011)."""
     cap = geometry.cap
     hx, hy = cap.lx / 2, cap.ly / 2
-    sheet = _Sheet(max(cap.lx, cap.ly))
+    sheet = Sheet(max(cap.lx, cap.ly))
     gap = 2.5 * sheet.text_size
     sheet.rect(-hx, -hy, cap.lx, cap.ly)
     _piles_and_columns(sheet, geometry, _LINE)
@@ -146,32 +254,39 @@ def form_plan(geometry: GeometryInput) -> str:
     for a, b in itertools.pairwise(ys):
         sheet.dimension(a, b, -hx - gap, horizontal=False)
     sheet.dimension(-hy, hy, -hx - 2 * gap, horizontal=False)
-    return sheet.render()
+    return sheet
 
 
 def form_section(geometry: GeometryInput, axis: Axis, tie_height: float) -> str:
     """Corte pelo centro na direção `axis`: altura, embutimento e eixo do tirante (D8) [cm]."""
+    return form_section_sheet(geometry, axis, tie_height).render()
+
+
+def form_section_sheet(geometry: GeometryInput, axis: Axis, tie_height: float) -> Sheet:
+    """Folha de `form_section`, com as primitivas e as camadas para o DXF (ADR-011)."""
     cap = geometry.cap
     length = cap.lx if axis == "x" else cap.ly
     half, h = length / 2, cap.h
-    sheet = _Sheet(max(length, 1.6 * h), _SECTION_TEXT)
+    sheet = Sheet(max(length, 1.6 * h), _SECTION_TEXT)
     gap = 2.5 * sheet.text_size
     stub = 0.3 * h
     sheet.rect(-half, 0.0, length, h)
     for u, size in _projected(((p.x, p.y, p.size) for p in geometry.piles), axis):
         a, b = u - size / 2, u + size / 2
-        sheet.polyline([(a, -stub), (a, cap.pile_embedment), (b, cap.pile_embedment), (b, -stub)])
+        outline = [(a, -stub), (a, cap.pile_embedment), (b, cap.pile_embedment), (b, -stub)]
+        sheet.polyline(outline, layer=PILE_LAYER)
     for c in geometry.columns:
         u, width = (c.x, c.bx) if axis == "x" else (c.y, c.by)
         sheet.polyline([(u - width / 2, h + stub), (u - width / 2, h),
                         (u + width / 2, h), (u + width / 2, h + stub)])  # fmt: skip
     tie = cap.pile_embedment + tie_height
-    sheet.line((-half, tie), (half, tie), TIE_COLOR, dash=f"{4 * sheet.stroke} {sheet.stroke}")
+    dash = f"{4 * sheet.stroke} {sheet.stroke}"
+    sheet.line((-half, tie), (half, tie), TIE_COLOR, dash=dash, layer=DIMENSION_LAYER)
     sheet.dimension(0.0, h, half + 2 * gap, horizontal=False)
     sheet.dimension(0.0, cap.pile_embedment, half + gap, horizontal=False)
     sheet.dimension(cap.pile_embedment, tie, -half - gap, horizontal=False)  # do outro lado
     sheet.dimension(-half, half, -stub - gap, horizontal=True)
-    return sheet.render()
+    return sheet
 
 
 def model_plan(
@@ -179,7 +294,7 @@ def model_plan(
 ) -> str:
     """Bielas (vermelho) e tirantes (azul) em planta, com as forças e as reações [kN]."""
     cap = geometry.cap
-    sheet = _Sheet(max(cap.lx, cap.ly))
+    sheet = Sheet(max(cap.lx, cap.ly))
     sheet.rect(-cap.lx / 2, -cap.ly / 2, cap.lx, cap.ly, _LIGHT)
     _piles_and_columns(sheet, geometry, _LIGHT, labels=False)
     nodes = {n.id: (n.x, n.y) for n in layout.nodes}
@@ -216,7 +331,7 @@ def model_section(geometry: GeometryInput, layout: StrutTieLayout, axis: Axis) -
     """Bielas e tirantes projetados no plano vertical da direção `axis`, com o braço z [cm]."""
     cap = geometry.cap
     length = cap.lx if axis == "x" else cap.ly
-    sheet = _Sheet(max(length, 1.6 * cap.h), _SECTION_TEXT)
+    sheet = Sheet(max(length, 1.6 * cap.h), _SECTION_TEXT)
     sheet.rect(-length / 2, 0.0, length, cap.h, _LIGHT)
     nodes = {n.id: ((n.x if axis == "x" else n.y), n.z) for n in layout.nodes}
     drawn: set[tuple[LayoutMemberKind, tuple[float, ...]]] = set()
@@ -235,8 +350,13 @@ def model_section(geometry: GeometryInput, layout: StrutTieLayout, axis: Axis) -
 
 def reinforcement_plan(geometry: GeometryInput, positions: Sequence[BarPosition]) -> str:
     """Armação inferior em planta: todas as barras e o chamado de cada posição (D19)."""
+    return reinforcement_plan_sheet(geometry, positions).render()
+
+
+def reinforcement_plan_sheet(geometry: GeometryInput, positions: Sequence[BarPosition]) -> Sheet:
+    """Folha de `reinforcement_plan`, com as primitivas e as camadas para o DXF (ADR-011)."""
     cap = geometry.cap
-    sheet = _Sheet(max(cap.lx, cap.ly))
+    sheet = Sheet(max(cap.lx, cap.ly))
     sheet.rect(-cap.lx / 2, -cap.ly / 2, cap.lx, cap.ly)
     _piles_and_columns(sheet, geometry, _LIGHT, labels=False)
     for position in positions:
@@ -252,7 +372,7 @@ def reinforcement_plan(geometry: GeometryInput, positions: Sequence[BarPosition]
     for k, position in enumerate(positions):
         v = -cap.ly / 2 - (2.0 + 1.3 * k) * sheet.text_size
         sheet.text(0.0, v, call_out(position), _color(position), 0.85)
-    return sheet.render()
+    return sheet
 
 
 def reinforcement_section(
@@ -260,15 +380,23 @@ def reinforcement_section(
 ) -> str:
     """Corte pela primeira linha de estacas na direção `axis`: barras paralelas em elevação, com
     os ganchos, e as que cruzam o corte em seção (D19)."""
+    return reinforcement_section_sheet(geometry, positions, axis).render()
+
+
+def reinforcement_section_sheet(
+    geometry: GeometryInput, positions: Sequence[BarPosition], axis: Axis
+) -> Sheet:
+    """Folha de `reinforcement_section`, com as primitivas e as camadas para o DXF (ADR-011)."""
     cap = geometry.cap
     across = 1 if axis == "x" else 0  # coordenada constante no plano do corte
     at = min(p.y if axis == "x" else p.x for p in geometry.piles)
     reach = max(p.size for p in geometry.piles) / 2
     length = cap.lx if axis == "x" else cap.ly
-    sheet = _Sheet(max(length, 1.6 * cap.h), _SECTION_TEXT)
+    sheet = Sheet(max(length, 1.6 * cap.h), _SECTION_TEXT)
     sheet.rect(-length / 2, 0.0, length, cap.h, _LIGHT)
     for u, size in _projected(((p.x, p.y, p.size) for p in geometry.piles), axis):
-        sheet.rect(u - size / 2, -0.3 * cap.h, size, 0.3 * cap.h + cap.pile_embedment, _LIGHT)
+        height = 0.3 * cap.h + cap.pile_embedment
+        sheet.rect(u - size / 2, -0.3 * cap.h, size, height, _LIGHT, layer=PILE_LAYER)
     heights = _layer_heights(geometry, positions)
     for k, position in enumerate(positions):
         z = heights[position.layer] + position.bar_diameter / 2
@@ -289,11 +417,8 @@ def reinforcement_section(
             if (a[across] - at) * (b[across] - at) < 0:
                 t = (at - a[across]) / (b[across] - a[across])
                 u = a[1 - across] + t * (b[1 - across] - a[1 - across])
-                sheet.items.append(
-                    f'<circle cx="{u:.1f}" cy="{-z:.1f}" r="{position.bar_diameter / 2:.1f}" '
-                    f'fill="{color}" stroke="none"/>'
-                )
-    return sheet.render()
+                sheet.circle(u, z, position.bar_diameter / 2, color, filled=True)
+    return sheet
 
 
 def call_out(position: BarPosition) -> str:
@@ -303,14 +428,11 @@ def call_out(position: BarPosition) -> str:
     return f"{position.id}: {position.count} φ{phi} C={length}"
 
 
-def _tag(sheet: _Sheet, at: Point, position: BarPosition) -> None:
+def _tag(sheet: Sheet, at: Point, position: BarPosition) -> None:
     """Número da posição sobre um fundo branco, legível no meio das barras."""
     size = 0.85 * sheet.text_size
     width = _CHAR_WIDTH * size * len(position.id) + 0.4 * size
-    sheet.items.append(
-        f'<rect x="{at[0] - width / 2:.1f}" y="{-at[1] - 0.6 * size:.1f}" width="{width:.1f}" '
-        f'height="{1.2 * size:.1f}" fill="#ffffff" stroke="none"/>'
-    )
+    sheet.mask(at[0] - width / 2, at[1] - 0.6 * size, width, 1.2 * size)
     sheet.text(at[0], at[1], position.id, _color(position), 0.85)
 
 
@@ -337,7 +459,7 @@ def _layer_heights(geometry: GeometryInput, positions: Sequence[BarPosition]) ->
 
 
 def _piles_and_columns(
-    sheet: _Sheet, geometry: GeometryInput, color: str, labels: bool = True
+    sheet: Sheet, geometry: GeometryInput, color: str, labels: bool = True
 ) -> None:
     # Pilares antes das estacas, para a estaca sob o pilar (D15) continuar visível.
     for c in geometry.columns:
@@ -346,9 +468,9 @@ def _piles_and_columns(
             sheet.text(c.x, c.y + c.by / 2 - sheet.text_size, c.id, scale=0.85)
     for p in geometry.piles:
         if p.shape is PileShape.CIRCULAR:
-            sheet.circle(p.x, p.y, p.size / 2, color)
+            sheet.circle(p.x, p.y, p.size / 2, color, layer=PILE_LAYER)
         else:
-            sheet.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size, color)
+            sheet.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size, color, layer=PILE_LAYER)
         if labels:
             sheet.text(p.x, p.y, p.id, scale=0.85)
 
