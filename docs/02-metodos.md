@@ -537,7 +537,7 @@ forma e a treliça (ADR-008), e o resultado não guarda onde cada barra fica.
   desenho as põe em camadas (x por baixo, depois y, depois diagonais), e o eixo das camadas de
   cima fica φ acima do `d′` da D8, que o modelo usa igual para todas. A diferença na altura útil fica abaixo de
   3 % nos benchmarks (B2: 32 mm em 1234 mm; B1: 16 mm em 842 mm); fica registrada como premissa
-  no memorial e não muda o cálculo neste ciclo.
+  no memorial e não muda o cálculo neste ciclo. O ciclo 18 leva as camadas ao cálculo (§4.11).
 
 **Especificação (D19).**
 
@@ -560,6 +560,44 @@ forma e a treliça (ADR-008), e o resultado não guarda onde cada barra fica.
 - (B) Gancho a 90° com a ponta subindo até o topo do bloco, menos o cobrimento (prática de
   alguns escritórios para amarrar a armadura superior; mais aço).
 - (C) Gancho semicircular com ponta de 2φ (o menor permitido pela 9.4.2.3).
+
+## 4.11 Altura útil por camada (especificação, D20 proposta)
+
+Objetivo: o M5 usar, para cada tirante, a altura útil da camada em que as barras ficam no
+desenho (D19), em vez do `d′` da camada inferior (D8) para todos. O bloco flexível já faz isso
+(`dy = dx − φ`, §4.2).
+
+**Achados** (modelo refeito com o eixo do tirante subindo φ ou 2φ; `y` acompanha pela D6).
+- O efeito na força é maior que o na altura útil, porque `y` cresce junto: no B2, `d` cai 2,6 %
+  (32 em 1234 mm) e a força sobe 3,5 % por camada.
+- B1 (φ16): +2,1 % por camada. B2 (φ32): +3,5 %. B7 (φ16, h = 210 cm): +0,9 %.
+- Nos três, a quantidade de barras não muda. O B1 em y fica justo: 390 mm² para 2 φ16 (402 mm²).
+- Com as bielas pela camada mais alta, o nó das estacas de canto do B2 passa de fcd3: 15,77 MPa
+  contra 15,48 MPa (antes passava). θ fica abaixo de 45° e y/d sobe a 0,31, que são só
+  recomendações dos autores. O B1 e o B7 continuam atendendo.
+
+**Especificação (D20).**
+
+| Etapa | Regra | Fonte |
+|---|---|---|
+| Camadas | As da D19: tirantes em x na 1ª, em y na 2ª, diagonais na 3ª | D19 |
+| Eixo de cada camada | `d′k = c + φ/2 + (k − 1)·φ`, com o φ adotado dos tirantes (D18), mesmo quando a camada de baixo só tem a malha (φ menor, a favor da segurança) | D8 estendida |
+| Tirantes | Força de cada tirante pelo modelo M5 refeito com o `d′` da sua camada (opção A abaixo) | D6, D13, D15, D17 |
+| Bielas e nó do pilar | Pelo modelo da camada mais alta presente (menor `z`, menor θ, maior tensão) | 22.3.2, a favor da segurança |
+| Nó da estaca | Área ampliada com o `d′` da 1ª camada (a menor área) | 22.3.2, a favor da segurança |
+| Aderência | Situação de aderência no eixo da camada mais alta presente (a favor da segurança; com h ≥ 60 cm não muda) | 9.3.1 |
+| MEF (D14) | Compara a tração do MEF com as forças de projeto, já por camada; nós com o `d′` da 1ª camada | D14 |
+| Treliça 3D (D12) | O confronto com o pilar fictício continua com o modelo da 1ª camada nos dois lados, para comparar modelos de mesmo braço | D12 |
+| Saída | Trilha de auditoria com o `d′` de cada camada; memorial cita a D20 nas premissas; resultados salvos antes ficam desatualizados (formato do hash "6" -> "7") | ADR-002 |
+
+**Como aplicar as camadas: opção (A), escolhida por Rodrigo em 18/10/2026.**
+- (A) Cada tirante com o braço da sua camada. **Escolhida.** Os tirantes em x não mudam; y e diagonais sobem
+  de 1 % a 4 % nos benchmarks. Mesma ideia do `dy = dx − φ` do bloco flexível.
+- (B) Um braço só, o da camada mais alta, para todos os tirantes. Mais simples e mais
+  conservador; os tirantes em x também sobem (B1 +2,1 %, B2 +3,5 %, B7 +1,8 %).
+
+Nenhuma das duas muda o contrato (`blococalc.schemas`); os golden de força dos tirantes em y e
+diagonais (A) ou de todos (B) mudam, com a justificativa no PR.
 
 ## 5. Benchmarks propostos
 
@@ -605,6 +643,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D17 | Fileiras desencontradas: isoáreas do pilar proporcionais às reações e deslocadas da excentricidade, tirantes na triangulação das estacas pelo mínimo de `Σ F·l` (critério da D12) e, entre os ótimos, o de menor `Σ F²` (§4.8) | Aprovada (Rodrigo, 17/10/2026) |
 | D18 | Escolha de barras: quantidade pelo φ do usuário, uma camada na faixa 1,2·φ com espaçamento da 18.3.2.2, ancoragem com a área efetiva, malha com φ mínimo e espaçamento entre 100 mm e o máximo da 20.1 (§4.9) | Aprovada (Rodrigo, 18/10/2026); opção (B) para tirante que não cabe escolhida em 17/10/2026 |
 | D19 | Desenho de armação: barras dos tirantes na faixa de face a face com gancho, malha em toda a largura, posições numeradas com comprimento pela linha de centro, camadas x, y e diagonais, tabela de aço com 7 850 kg/m³ (§4.10) | Aprovada (Rodrigo, 18/10/2026); gancho a 90° com 8φ escolhido por Rodrigo em 18/10/2026 |
+| D20 | Altura útil por camada: cada tirante com o `d′` da sua camada da D19 (`c + φ/2 + (k − 1)·φ`), bielas e nó do pilar pelo modelo da camada mais alta, nó da estaca pela 1ª camada (§4.11) | Proposta (Claude, 18/10/2026); opção (A), por camada, escolhida por Rodrigo em 18/10/2026 |
 
 ## 7. Ainda falta neste documento
 
