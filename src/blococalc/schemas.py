@@ -12,8 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION: Literal["6"] = "6"
-_READABLE_VERSIONS = ("1", "2", "3", "4", "5", "6")
+SCHEMA_VERSION: Literal["7"] = "7"
+_READABLE_VERSIONS = ("1", "2", "3", "4", "5", "6", "7")
 
 
 class _Contract(BaseModel):
@@ -23,9 +23,9 @@ class _Contract(BaseModel):
 
 
 class _Versioned(_Contract):
-    """Contrato de topo. Lê v1 a v5: as versões novas só acrescentam campos e valores."""
+    """Contrato de topo. Lê v1 a v6: as versões novas só acrescentam campos e valores."""
 
-    schema_version: Literal["6"] = SCHEMA_VERSION
+    schema_version: Literal["7"] = SCHEMA_VERSION
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -255,11 +255,48 @@ class Reinforcement(_Contract):
     area_provided: float | None = Field(default=None, gt=0, description="Área efetiva [mm²]")
 
 
+class HookShape(StrEnum):
+    """Gancho nas pontas das barras (NBR 6118:2023, 9.4.2.3; D19)."""
+
+    RIGHT_ANGLE = "right_angle"  # 90° com ponta reta de 8φ
+    RIGHT_ANGLE_TO_TOP = "right_angle_to_top"  # 90° com a ponta até o topo menos o cobrimento
+    SEMICIRCULAR = "semicircular"  # 180° com ponta reta de 2φ
+    NONE = "none"
+
+
+Point = tuple[float, float]
+
+
+class BarPosition(_Contract):
+    """Posição de armação (ADR-010): barras iguais, com as extremidades em planta [mm].
+
+    `length` é o comprimento de cada barra pela linha de centro, com os ganchos; a média quando
+    `variable_length`.
+    """
+
+    id: str = Field(min_length=1)
+    bar_diameter: float = Field(gt=0, description="[mm]")
+    count: int = Field(gt=0)
+    length: float = Field(gt=0, description="[mm]")
+    variable_length: bool = False
+    hook: HookShape
+    layer: int = Field(ge=1, le=3, description="1: x; 2: y; 3: diagonais")
+    reinforcement_ids: tuple[str, ...]
+    bars: tuple[tuple[Point, Point], ...]
+
+    @model_validator(mode="after")
+    def _one_line_per_bar(self) -> BarPosition:
+        if len(self.bars) != self.count:
+            raise ValueError(f"count = {self.count} e {len(self.bars)} barras em planta")
+        return self
+
+
 class AnalysisResult(_Versioned):
     rigid: bool
     reactions: tuple[PileReaction, ...]
     checks: tuple[Check, ...]
     reinforcement: tuple[Reinforcement, ...] = ()
+    bar_positions: tuple[BarPosition, ...] = ()  # ADR-010
     warnings: tuple[str, ...] = ()
     audit: AuditTrail
     disclaimer: str = (
