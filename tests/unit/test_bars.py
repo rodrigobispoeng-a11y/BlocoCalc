@@ -148,3 +148,12 @@ def test_layout_and_fem_use_the_adopted_diameter() -> None:
     assert layout is not None
     pile = next(n for n in layout.nodes if n.id == "estaca_E1")
     assert pile.z == pytest.approx(geometry.cap.pile_embedment + geometry.cap.cover + 16.0)
+
+
+def test_flexible_section_without_solution_keeps_the_analysis_running() -> None:
+    # Flexão sem solução (área infinita) não tem barras; antes, divisão por zero na escolha.
+    result = analyze(grid_cap(9, 2), MaterialsInput(fck=35.0), _loads(30000e3))
+    assert not result.rigid
+    flexure = next(r for r in result.reinforcement if r.id == "flexao_x")
+    assert math.isinf(flexure.area_required)
+    assert flexure.spacing is None
