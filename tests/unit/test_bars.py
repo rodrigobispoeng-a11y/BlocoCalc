@@ -147,7 +147,8 @@ def test_layout_and_fem_use_the_adopted_diameter() -> None:
     layout = strut_tie_layout(project, "C1")
     assert layout is not None
     pile = next(n for n in layout.nodes if n.id == "estaca_E1")
-    assert pile.z == pytest.approx(geometry.cap.pile_embedment + geometry.cap.cover + 16.0)
+    # Nó da estaca na 2ª camada de tirantes (D20): c + φ/2 + φ com φ32.
+    assert pile.z == pytest.approx(geometry.cap.pile_embedment + geometry.cap.cover + 16.0 + 32.0)
 
 
 def test_flexible_section_without_solution_keeps_the_analysis_running() -> None:

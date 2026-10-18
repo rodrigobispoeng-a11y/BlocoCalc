@@ -44,16 +44,19 @@ def loads(*normals: float, self_weight: bool = True) -> LoadsInput:
 def test_b1_full_analysis() -> None:
     # Peso próprio D7: 5 % de 980 kN -> R = 1,05·245 = 257,25 kN; Rd = 1,2·R.
     # d′ (D8) = 50 + 16/2 = 58 -> d = 1000 − 100 − 58 = 842; y por D6 com a face de D13.
+    # D20: o tirante em y fica na 2ª camada, d′ = 58 + 16 = 74 -> d = 826, com o seu próprio y.
     result = analyze(four_pile_cap(), C35, loads(980e3))
     rd, d = 1.2 * 257.25e3, 842.0
-    z = d - node_depth(d, 200.0, 2.0 * rd * 437.5 / strut_tie_strengths(C35).fcd1) / 2.0
+    fcd1 = strut_tie_strengths(C35).fcd1
+    z = d - node_depth(d, 200.0, 2.0 * rd * 437.5 / fcd1) / 2.0
+    z_y = 826.0 - node_depth(826.0, 200.0, 2.0 * rd * 437.5 / fcd1) / 2.0
     fyd = 500.0 / 1.15
 
     assert result.rigid
     assert [r.force for r in result.reactions] == pytest.approx([257.25e3] * 4)
     items = {r.id: r for r in result.reinforcement}
     assert items["tirante_E1_E2"].force_d == pytest.approx(rd * 550.0 / z, rel=1e-6)
-    assert items["tirante_E2_E3"].force_d == pytest.approx(rd * 437.5 / z, rel=1e-6)
+    assert items["tirante_E2_E3"].force_d == pytest.approx(rd * 437.5 / z_y, rel=1e-6)
     assert items["tirante_E1_E2"].area_required == pytest.approx(rd * 550.0 / z / fyd, rel=1e-6)
     assert items["malha_x"].area_required == pytest.approx(0.2 * 2 * rd * 550.0 / z / fyd)
     assert items["malha_x"].kind is ReinforcementKind.DISTRIBUTION
@@ -268,16 +271,18 @@ def test_quincunx_by_d15_warns_about_the_center_pile() -> None:
 
 
 @pytest.mark.golden
-def test_input_hash_format_6() -> None:
-    # ADR-009: o formato do hash passa de "4" para "6", para os resultados salvos sem barras
-    # ficarem desatualizados. Campos vazios continuam fora do hash (ADR-007).
+def test_input_hash_format_7() -> None:
+    # ADR-009: o formato do hash passou de "4" para "6", para os resultados salvos sem barras
+    # ficarem desatualizados; D20: passa a "7", porque os tirantes das camadas de cima mudaram.
+    # Campos vazios continuam fora do hash (ADR-007).
     loads = LoadsInput(
         cases=(LoadCase(id="ELU1", column_loads=(ColumnLoad(column_id="P1", n=980e3, mx=1.5e6),)),)
     )
     b1 = analysis._input_hash(four_pile_cap(), C35, loads, DetailingInput())
     v5 = "7f79c43e728fd467f20c3798886c3256b728b902f22fa3240ee5dc837d7714ae"  # B1 na v4 e na v5
-    assert b1 != v5
-    assert b1 == "e2b957278da4c93022022efe26c01a12113dbc3edd47c2df65324bad4c4febcb"
+    v6 = "e2b957278da4c93022022efe26c01a12113dbc3edd47c2df65324bad4c4febcb"  # B1 na v6 e na v7
+    assert b1 not in (v5, v6)
+    assert b1 == "6725ecd97306fa6507463d500aff94b84f4d4184e075ad18417aa4164c1f934f"
     stiff = four_pile_cap().piles[0].model_copy(update={"axial_stiffness": 720e3})
     geometry = four_pile_cap().model_copy(update={"piles": (stiff, *four_pile_cap().piles[1:])})
     assert analysis._input_hash(geometry, C35, loads, DetailingInput()) != b1

@@ -85,7 +85,7 @@ def bar_positions(
                      run.direction)
             for offset in _offsets(run.count, run.spacing)
         ]  # fmt: skip
-        _add(groups, (0, run.bar_diameter, _layer(run.direction)), run.reinforcement_ids, bars,
+        _add(groups, (0, run.bar_diameter, bar_layer(run.direction)), run.reinforcement_ids, bars,
              hook, fyk)  # fmt: skip
     for mesh in meshes:
         normal = (-mesh.direction[1], mesh.direction[0])
@@ -97,7 +97,7 @@ def bar_positions(
                      mesh.direction)
             for offset in _offsets(count, mesh.spacing)
         ]  # fmt: skip
-        _add(groups, (1, mesh.bar_diameter, _layer(mesh.direction)), (mesh.reinforcement_id,),
+        _add(groups, (1, mesh.bar_diameter, bar_layer(mesh.direction)), (mesh.reinforcement_id,),
              bars, hook, fyk)  # fmt: skip
 
     def order(key: _Key) -> tuple[int, float, int, float]:
@@ -141,7 +141,7 @@ def _add(  # noqa: PLR0913, PLR0917 - grupo, linha e regra do comprimento
     groups.setdefault((*kind, tuple(lengths)), []).append((ids, bars))
 
 
-def _layer(direction: Point) -> int:
+def bar_layer(direction: Point) -> int:
     """Camada: 1 para x, 2 para y, 3 para as diagonais (D19)."""
     if abs(direction[1]) <= _AXIS_TOL:
         return 1

@@ -155,9 +155,10 @@ def test_b1_matches_prototype() -> None:
     assert [r.force for r in result.reactions] == pytest.approx([294e3] * 4, rel=0.002)
     assert checks["mef_tracao_x_0"].demand == pytest.approx(412.3e3, rel=0.01)
     assert checks["mef_tracao_y_0"].demand == pytest.approx(331.7e3, rel=0.01)
-    # M5 com φ16 (d′ = 58 mm): tração do MEF 3 a 10 % acima.
-    for axis in "xy":
+    # M5 com φ16: em x (d′ = 58 mm) a tração do MEF fica 3 a 10 % acima; em y o M5 já usa a
+    # 2ª camada (D20, d′ = 74 mm) e a folga cai para 1 a 10 %.
+    for axis, low in (("x", 1.03), ("y", 1.01)):
         check = checks[f"mef_tracao_{axis}_0"]
-        assert 1.03 < 1.1 * check.demand / check.capacity < 1.10
+        assert low < 1.1 * check.demand / check.capacity < 1.10
     assert checks["mef_no_pilar_P1"].demand == pytest.approx(8.0, abs=0.4)
     assert result.audit.parameters["mesh_size_mm"] == 150.0
