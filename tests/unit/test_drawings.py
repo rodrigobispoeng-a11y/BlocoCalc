@@ -9,15 +9,29 @@ import pytest
 
 from blococalc.analysis import analyze, strut_tie_layout
 from blococalc.report.drawings import (
+    DIMENSION_LAYER,
+    FORM_LAYER,
     MESH_COLOR,
+    MESH_LAYER,
+    PILE_LAYER,
     STRUT_COLOR,
+    TEXT_LAYER,
     TIE_COLOR,
+    TIE_LAYER,
+    Circle,
+    Line,
+    Mask,
+    Text,
     form_plan,
+    form_plan_sheet,
     form_section,
+    form_section_sheet,
     model_plan,
     model_section,
     reinforcement_plan,
+    reinforcement_plan_sheet,
     reinforcement_section,
+    reinforcement_section_sheet,
 )
 from blococalc.schemas import (
     ColumnLoad,
@@ -147,3 +161,32 @@ def test_reinforcement_section_shows_hooks_and_crossing_bars(axis: str) -> None:
     assert dots
     parallel = "N1" if axis == "x" else "N2"
     assert parallel in texts(svg)
+
+
+def test_form_drawings_put_each_primitive_on_its_cad_layer() -> None:
+    # ADR-011: forma, estacas, cotas e textos em camadas separadas para o DXF.
+    plan = form_plan_sheet(four_pile_cap())
+    assert {i.layer for i in plan.items if isinstance(i, Circle)} == {PILE_LAYER}
+    assert {i.layer for i in plan.items if isinstance(i, Line)} == {DIMENSION_LAYER}
+    values = {i.label for i in plan.items if isinstance(i, Text) and i.layer == DIMENSION_LAYER}
+    assert values == {"40", "120", "200"}
+    assert {i.label for i in plan.items if isinstance(i, Text) and i.layer == TEXT_LAYER} == {
+        "P1", "E1", "E2", "E3", "E4"
+    }  # fmt: skip
+    section = form_section_sheet(four_pile_cap(), "x", 100.0)
+    layers = {i.layer for i in section.items if not isinstance(i, (Text, Mask))}
+    assert layers == {FORM_LAYER, PILE_LAYER, DIMENSION_LAYER}
+
+
+def test_reinforcement_drawings_put_ties_and_mesh_on_their_layers() -> None:
+    project, _ = b1()
+    positions = project.result.bar_positions  # type: ignore[union-attr]
+    plan = reinforcement_plan_sheet(project.geometry, positions)
+    bars = [i for i in plan.items if isinstance(i, Line)]
+    ties = sum(p.count for p in positions if p.id in {"N1", "N2"})
+    assert sum(i.layer == TIE_LAYER for i in bars) == ties
+    assert sum(i.layer == MESH_LAYER for i in bars) == sum(p.count for p in positions) - ties
+    section = reinforcement_section_sheet(project.geometry, positions, "x")
+    dots = [i for i in section.items if isinstance(i, Circle) and i.filled]
+    assert dots
+    assert {i.layer for i in dots} <= {TIE_LAYER, MESH_LAYER}
