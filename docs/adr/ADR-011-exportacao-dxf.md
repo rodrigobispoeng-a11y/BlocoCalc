@@ -36,10 +36,11 @@
      desenhos, e títulos com "ESC. 1:25". No SVG do memorial a altura continua proporcional a
      cada desenho, como hoje. Acentos e "φ" saem em ANSI 1252 (`$DWGCODEPAGE`), com "φ" escrito
      como `%%c`, o símbolo de diâmetro do AutoCAD.
-  6. Nova função pura `blococalc.report.dxf.cap_drawing(geometry, positions) -> str`, sem Qt e
-     sem I/O, como o resto de `report`. A tela ganha "Arquivo > Exportar desenhos (DXF)...",
-     que recalcula como o memorial e grava o texto; bloco sem posições de armação (análise que
-     reprovou antes do detalhamento) sai só com a forma, com aviso na barra de estado.
+  6. Nova função pura `blococalc.report.dxf.cap_drawing(project) -> bytes` (o arquivo já
+     codificado em ANSI 1252), sem Qt e sem I/O, como o resto de `report`. A tela ganha
+     "Arquivo > Exportar desenhos (DXF)...", que recalcula como o memorial e grava o arquivo;
+     bloco sem posições de armação (análise que reprovou antes do detalhamento) sai só com a
+     forma, com aviso na barra de estado.
 - Fora do escopo: cotas associativas (`DIMENSION`), blocos (`INSERT`), espaço do papel com
   carimbo e escala escolhida pelo usuário, DWG. As cotas saem desenhadas (linhas e texto), como
   no memorial.

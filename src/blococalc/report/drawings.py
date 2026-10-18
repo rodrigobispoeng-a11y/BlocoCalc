@@ -238,11 +238,11 @@ def form_plan(geometry: GeometryInput) -> str:
     return form_plan_sheet(geometry).render()
 
 
-def form_plan_sheet(geometry: GeometryInput) -> Sheet:
+def form_plan_sheet(geometry: GeometryInput, text_height: float | None = None) -> Sheet:
     """Folha de `form_plan`, com as primitivas e as camadas para o DXF (ADR-011)."""
     cap = geometry.cap
     hx, hy = cap.lx / 2, cap.ly / 2
-    sheet = Sheet(max(cap.lx, cap.ly))
+    sheet = _sheet(max(cap.lx, cap.ly), text_height=text_height)
     gap = 2.5 * sheet.text_size
     sheet.rect(-hx, -hy, cap.lx, cap.ly)
     _piles_and_columns(sheet, geometry, _LINE)
@@ -262,12 +262,14 @@ def form_section(geometry: GeometryInput, axis: Axis, tie_height: float) -> str:
     return form_section_sheet(geometry, axis, tie_height).render()
 
 
-def form_section_sheet(geometry: GeometryInput, axis: Axis, tie_height: float) -> Sheet:
+def form_section_sheet(
+    geometry: GeometryInput, axis: Axis, tie_height: float, text_height: float | None = None
+) -> Sheet:
     """Folha de `form_section`, com as primitivas e as camadas para o DXF (ADR-011)."""
     cap = geometry.cap
     length = cap.lx if axis == "x" else cap.ly
     half, h = length / 2, cap.h
-    sheet = Sheet(max(length, 1.6 * h), _SECTION_TEXT)
+    sheet = _sheet(max(length, 1.6 * h), _SECTION_TEXT, text_height)
     gap = 2.5 * sheet.text_size
     stub = 0.3 * h
     sheet.rect(-half, 0.0, length, h)
@@ -353,10 +355,12 @@ def reinforcement_plan(geometry: GeometryInput, positions: Sequence[BarPosition]
     return reinforcement_plan_sheet(geometry, positions).render()
 
 
-def reinforcement_plan_sheet(geometry: GeometryInput, positions: Sequence[BarPosition]) -> Sheet:
+def reinforcement_plan_sheet(
+    geometry: GeometryInput, positions: Sequence[BarPosition], text_height: float | None = None
+) -> Sheet:
     """Folha de `reinforcement_plan`, com as primitivas e as camadas para o DXF (ADR-011)."""
     cap = geometry.cap
-    sheet = Sheet(max(cap.lx, cap.ly))
+    sheet = _sheet(max(cap.lx, cap.ly), text_height=text_height)
     sheet.rect(-cap.lx / 2, -cap.ly / 2, cap.lx, cap.ly)
     _piles_and_columns(sheet, geometry, _LIGHT, labels=False)
     for position in positions:
@@ -384,7 +388,10 @@ def reinforcement_section(
 
 
 def reinforcement_section_sheet(
-    geometry: GeometryInput, positions: Sequence[BarPosition], axis: Axis
+    geometry: GeometryInput,
+    positions: Sequence[BarPosition],
+    axis: Axis,
+    text_height: float | None = None,
 ) -> Sheet:
     """Folha de `reinforcement_section`, com as primitivas e as camadas para o DXF (ADR-011)."""
     cap = geometry.cap
@@ -392,7 +399,7 @@ def reinforcement_section_sheet(
     at = min(p.y if axis == "x" else p.x for p in geometry.piles)
     reach = max(p.size for p in geometry.piles) / 2
     length = cap.lx if axis == "x" else cap.ly
-    sheet = Sheet(max(length, 1.6 * cap.h), _SECTION_TEXT)
+    sheet = _sheet(max(length, 1.6 * cap.h), _SECTION_TEXT, text_height)
     sheet.rect(-length / 2, 0.0, length, cap.h, _LIGHT)
     for u, size in _projected(((p.x, p.y, p.size) for p in geometry.piles), axis):
         height = 0.3 * cap.h + cap.pile_embedment
@@ -419,6 +426,11 @@ def reinforcement_section_sheet(
                 u = a[1 - across] + t * (b[1 - across] - a[1 - across])
                 sheet.circle(u, z, position.bar_diameter / 2, color, filled=True)
     return sheet
+
+
+def _sheet(size: float, text: float = 0.032, text_height: float | None = None) -> Sheet:
+    """Folha com texto proporcional ao desenho, ou com altura fixa [mm] (DXF, ADR-011)."""
+    return Sheet(size, text if text_height is None else text_height / size)
 
 
 def call_out(position: BarPosition) -> str:
