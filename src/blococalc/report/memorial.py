@@ -9,14 +9,23 @@ recalcula nada.
 from __future__ import annotations
 
 import base64
+import math
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from html import escape
 
-from blococalc.report.drawings import form_plan, form_section, model_plan, model_section
+from blococalc.report.drawings import (
+    form_plan,
+    form_section,
+    model_plan,
+    model_section,
+    reinforcement_plan,
+    reinforcement_section,
+)
 from blococalc.schemas import (
     AnalysisResult,
+    BarPosition,
     Check,
     CheckStatus,
     Project,
@@ -33,6 +42,7 @@ _STYLE = (
     "table{border-collapse:collapse}th,td{border:1px solid #888;padding:2px 4px}"
     "th{background:#ddd}.falha{background:#f6c6c6}.desenho td{border:none}"
 )
+_STEEL_DENSITY = 7850.0  # kg/m³, NBR 6118:2023, 8.3.3
 _PLAN_WIDTH = 420  # largura dos desenhos na página (o PDF reduz a imagem de 2400 px)
 _SECTION_WIDTH = 270
 
@@ -67,6 +77,7 @@ def calculation_report(
         _list(result.audit.assumptions),
         *(_model_drawings(project, result, layouts or {}) if drawings else ()),
         *_results(result, 4),
+        *(_reinforcement_drawings(project, result) if drawings else ()),
     ]
     if project.fem_result is not None:
         parts += ["<h2>8. Conferência por MEF (D14)</h2>", *_results(project.fem_result, None)]
@@ -249,6 +260,67 @@ def _model_drawings(
             ),
         ]
     return parts
+
+
+def _reinforcement_drawings(project: Project, result: AnalysisResult) -> list[str]:
+    """Armação em planta e em corte, tabela e resumo de aço (D19, ADR-010)."""
+    positions = result.bar_positions
+    if not positions:
+        return []
+    g = project.geometry
+    return [
+        "<h3 style='page-break-before:always'>Desenho de armação</h3>",
+        _figure(reinforcement_plan(g, positions), _PLAN_WIDTH, "Armação inferior em planta"),
+        _pair(
+            (reinforcement_section(g, positions, "x"), "Corte na direção x"),
+            (reinforcement_section(g, positions, "y"), "Corte na direção y"),
+        ),
+        _paragraph(
+            "Camadas de baixo para cima: barras em x, barras em y e diagonais. Comprimentos pela "
+            'linha de centro, com os ganchos, em cm; "var." indica comprimento variável, com o '
+            "comprimento médio na tabela."
+        ),
+        "<h3>Tabela de aço</h3>",
+        _table(
+            ("Posição", "φ [mm]", "Quantidade", "C unitário [cm]", "C total [m]"),
+            [
+                (
+                    p.id,
+                    _phi(p.bar_diameter),
+                    str(p.count),
+                    ("var. (média " if p.variable_length else "")
+                    + _n(p.length / 10, 0)
+                    + (")" if p.variable_length else ""),
+                    _n(p.count * p.length / 1e3, 2),
+                )
+                for p in positions
+            ],
+        ),
+        "<h3>Resumo de aço</h3>",
+        _table(("φ [mm]", "C total [m]", "Massa [kg]"), _steel_summary(positions)),
+        _paragraph(
+            f"Massa específica do aço de {_STEEL_DENSITY:g} kg/m³ (NBR 6118:2023, 8.3.3), sem "
+            "perdas nem emendas."
+        ),
+    ]
+
+
+def _steel_summary(positions: Sequence[BarPosition]) -> list[tuple[str, str, str]]:
+    """Comprimento e massa por φ; a última linha é o total."""
+    lengths: dict[float, float] = {}
+    for p in positions:
+        lengths[p.bar_diameter] = lengths.get(p.bar_diameter, 0.0) + p.count * p.length / 1e3
+    rows, total = [], 0.0
+    for phi in sorted(lengths):
+        mass = lengths[phi] * math.pi * phi**2 / 4.0 * 1e-6 * _STEEL_DENSITY
+        total += mass
+        rows.append((_phi(phi), _n(lengths[phi], 2), _n(mass, 1)))
+    rows.append(("Total", "", _n(total, 1)))
+    return rows
+
+
+def _phi(diameter: float) -> str:
+    return f"{diameter:g}".replace(".", ",")
 
 
 def _image(svg: str, width: int) -> str:

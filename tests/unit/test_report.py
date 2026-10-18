@@ -109,13 +109,29 @@ def test_report_embeds_form_and_model_drawings() -> None:
     assert layout is not None
     html = calculation_report(saved, ISSUED, {"ELU1": layout})
     images = re.findall(r"<img src='data:image/svg\+xml;base64,([^']+)' width='(\d+)'", html)
-    assert len(images) == 3 + 3  # forma: planta e 2 cortes; modelo: planta e 2 cortes
+    assert len(images) == 3 + 3 + 3  # forma, modelo e armação: planta e 2 cortes cada
     svgs = [base64.b64decode(data).decode() for data, _ in images]
     assert all(s.startswith("<svg") for s in svgs)
     assert all(f"{m.force_d / 1e3:.0f} kN" in svgs[3] for m in layout.members)
     assert html.index("Forma (cotas em cm)") < html.index("<h2>2.")
     assert html.index("<h2>3.") < html.index("Modelo de bielas e tirantes: caso ELU1")
     assert html.index("Modelo de bielas") < html.index("<h2>4.")
+    assert html.index("<h2>7.") < html.index("Desenho de armação") < html.index("<h2>9.")
+    assert "N1: 6 φ16 C=220" in svgs[6]
+
+
+@pytest.mark.golden
+def test_report_has_the_steel_schedule() -> None:
+    # D19, B1: N1 6 φ16 e N2 4 φ16 de 220 cm, malha N3 e N4 de 10 φ6,3 com 202 cm.
+    # φ16: 22,00 m · π·16²/4·10⁻⁶·7850 = 1,578 kg/m -> 34,7 kg; φ6,3: 40,40 m · 0,2447 kg/m
+    # -> 9,9 kg; total 44,6 kg.
+    html = calculation_report(project(), ISSUED)
+    assert "<td>N1</td><td>16</td><td>6</td><td>220</td><td>13.20</td>" in html
+    assert "<td>N3</td><td>6,3</td><td>10</td><td>202</td><td>20.20</td>" in html
+    assert "<td>16</td><td>22.00</td><td>34.7</td>" in html
+    assert "<td>6,3</td><td>40.40</td><td>9.9</td>" in html
+    assert "<td>Total</td><td></td><td>44.6</td>" in html
+    assert "8.3.3" in html
 
 
 def test_report_without_drawings() -> None:
