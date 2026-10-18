@@ -41,7 +41,7 @@ def test_b2_full_analysis() -> None:
     assert areas["tirante_E1_E5"] == pytest.approx(2767.0, rel=0.02)
     assert areas["malha_x"] == pytest.approx(0.2 * 2 * areas["tirante_E2_E3"])
     failed = {c.id for c in result.checks if c.status is CheckStatus.FAIL}
-    assert all(f.startswith("C1:ancoragem_") for f in failed)  # 450 mm de borda para φ25
+    assert all(f.startswith("C1:ancoragem_") for f in failed)  # 450 mm de borda; φ32 pela D18
 
 
 def b6() -> tuple[GeometryInput, LoadsInput]:

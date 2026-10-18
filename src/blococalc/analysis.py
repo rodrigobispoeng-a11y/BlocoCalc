@@ -36,6 +36,7 @@ from blococalc.geometry.fictitious_column import fictitious_column
 from blococalc.schemas import (
     AnalysisResult,
     AuditTrail,
+    Cap,
     Check,
     CheckStatus,
     DetailingInput,
@@ -53,6 +54,13 @@ from blococalc.schemas import (
     Reinforcement,
     ReinforcementKind,
     StrutTieLayout,
+)
+from blococalc.standards.bars import (
+    BAR_SERIES,
+    MIN_MESH_SPACING,
+    bar_area,
+    mesh_bars,
+    mesh_spacing,
 )
 from blococalc.standards.detailing import rigid_cap_detailing
 from blococalc.standards.durability import cover_check
@@ -151,9 +159,68 @@ def analyze(
     """Reações, verificações e armaduras de um bloco sobre estacas.
 
     Bloco rígido por bielas e tirantes (Santos/Stucchi); bloco flexível (NBR 6118:2023, 22.7.1)
-    como laje sobre estacas (D9). Vários pilares entram como pilar fictício (D10).
+    como laje sobre estacas (D9). Vários pilares entram como pilar fictício (D10). Se as barras
+    do diâmetro pedido não couberem, o φ sobe pela série e a análise é refeita (D18, opção B).
     """
     options = detailing or DetailingInput()
+    asked = _analyze_with(geometry, materials, loads, options)
+    if _bars_fit(asked):
+        return asked
+    phi = options.bar_diameter
+    for raised_phi in (p for p in BAR_SERIES if p > phi):
+        raised = _analyze_with(
+            geometry, materials, loads, options.model_copy(update={"bar_diameter": raised_phi})
+        )
+        if _bars_fit(raised):
+            note = (
+                f"As barras φ{phi:g} não cabem numa camada (faixa 1,2·φ da estaca ou espaçamento "
+                f"da malha de flexão abaixo de {MIN_MESH_SPACING:g} mm): o programa adotou "
+                f"φ{raised_phi:g} e refez o modelo com o d′ dessa barra (D18)."
+            )
+            parameters = {**raised.audit.parameters, "bar_diameter_input_mm": phi}
+            audit = raised.audit.model_copy(
+                update={"parameters": parameters, "input_hash": asked.audit.input_hash}
+            )
+            return raised.model_copy(update={"warnings": (*raised.warnings, note), "audit": audit})
+    note = (
+        f"Nem φ{BAR_SERIES[-1]:g} cabe numa camada: o resultado mantém φ{phi:g} e as barras "
+        "precisam de outra solução (D18)."
+    )
+    return asked.model_copy(update={"warnings": (*asked.warnings, note)})
+
+
+def adopted_bar_diameter(
+    geometry: GeometryInput,
+    materials: MaterialsInput,
+    loads: LoadsInput,
+    detailing: DetailingInput | None = None,
+) -> float:
+    """φ dos tirantes que `analyze()` adota, depois de subir pela série se preciso (D18)."""
+    parameters = analyze(geometry, materials, loads, detailing).audit.parameters
+    return float(parameters["bar_diameter_mm"])
+
+
+def _bars_fit(result: AnalysisResult) -> bool:
+    """Barras dos tirantes cabem na faixa e a flexão tem espaçamento executável (D18)."""
+    band = all(
+        c.status is not CheckStatus.FAIL
+        for c in result.checks
+        if c.id.split(":")[-1].startswith("faixa_")
+    )
+    return band and all(
+        r.spacing is None or r.spacing >= MIN_MESH_SPACING
+        for r in result.reinforcement
+        if r.kind is ReinforcementKind.FLEXURE
+    )
+
+
+def _analyze_with(
+    geometry: GeometryInput,
+    materials: MaterialsInput,
+    loads: LoadsInput,
+    options: DetailingInput,
+) -> AnalysisResult:
+    """Análise com o diâmetro de `options`, sem trocar de barra."""
     multiple = len(geometry.columns) > 1
     tie_height = geometry.cap.cover + options.bar_diameter / 2.0
     strengths = strut_tie_strengths(materials)
@@ -217,6 +284,8 @@ def analyze(
                 area_required=t.area_required,
                 bar_diameter=phi,
                 reference=_TIE_REF,
+                bar_count=result.bar_counts[(t.pile_a, t.pile_b)],
+                area_provided=result.bar_counts[(t.pile_a, t.pile_b)] * bar_area(phi),
             )
             for t in model.ties
         ]
@@ -244,7 +313,7 @@ def analyze(
             "sobre estacas (D9), não por bielas e tirantes.",
         )
         warnings.append(_CORNER_PILES_WARNING)
-    reinforcement = list(envelope.values())
+    reinforcement = [_with_mesh_bars(r, geometry.cap) for r in envelope.values()]
     reinforcement += _flagged(warnings, options.bar_diameter)
     return AnalysisResult(
         rigid=rigid,
@@ -274,6 +343,29 @@ def analyze(
             },
             input_hash=_input_hash(geometry, materials, loads, options),
         ),
+    )
+
+
+def _with_mesh_bars(item: Reinforcement, cap: Cap) -> Reinforcement:
+    """Diâmetro e espaçamento da malha de distribuição e da flexão do bloco flexível (D18).
+
+    A malha começa no menor φ da série; a flexão usa o φ pedido, e `_bars_fit` decide se ele
+    precisa subir. Barras em x se distribuem na largura em y, e vice-versa.
+    """
+    if item.kind not in (ReinforcementKind.DISTRIBUTION, ReinforcementKind.FLEXURE):
+        return item
+    width = cap.ly if item.direction[0] else cap.lx
+    if item.kind is ReinforcementKind.DISTRIBUTION:
+        phi, spacing = mesh_bars(item.area_required, width, cap.h, BAR_SERIES[0])
+    else:
+        phi = item.bar_diameter
+        spacing = mesh_spacing(item.area_required, width, cap.h, phi)
+    return item.model_copy(
+        update={
+            "bar_diameter": phi,
+            "spacing": spacing,
+            "area_provided": bar_area(phi) * width / spacing,
+        }
     )
 
 
@@ -385,7 +477,8 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
     from blococalc.fem.mesh import mesh_cap  # noqa: PLC0415
 
     options = detailing or DetailingInput()
-    tie_height = geometry.cap.cover + options.bar_diameter / 2.0
+    phi = adopted_bar_diameter(geometry, materials, loads, options)  # D18
+    tie_height = geometry.cap.cover + phi / 2.0
     strengths = strut_tie_strengths(materials)
     ratio = SELF_WEIGHT_RATIO if loads.include_cap_self_weight else 0.0
     checks = list(
@@ -494,7 +587,8 @@ def strut_tie_layout(project: Project, case_id: str) -> StrutTieLayout | None:
     rigidity = rigidity_checks(geometry.cap, model_geometry.columns[0])
     if any(c.status is not CheckStatus.OK for c in rigidity):
         return None
-    tie_height = geometry.cap.cover + project.detailing.bar_diameter / 2.0
+    phi = adopted_bar_diameter(geometry, project.materials, loads, project.detailing)  # D18
+    tie_height = geometry.cap.cover + phi / 2.0
     self_weight = (
         SELF_WEIGHT_RATIO * sum(load.n for load in case.column_loads)
         if loads.include_cap_self_weight
