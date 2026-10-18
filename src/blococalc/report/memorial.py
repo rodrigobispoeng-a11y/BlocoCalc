@@ -43,6 +43,8 @@ _STYLE = (
     "th{background:#ddd}.falha{background:#f6c6c6}.desenho td{border:none}"
 )
 _STEEL_DENSITY = 7850.0  # kg/m³, NBR 6118:2023, 8.3.3
+STEEL_SCHEDULE_HEAD = ("Posição", "φ [mm]", "Quantidade", "C unitário [cm]", "C total [m]")
+STEEL_SUMMARY_HEAD = ("φ [mm]", "C total [m]", "Massa [kg]")
 _PLAN_WIDTH = 420  # largura dos desenhos na página (o PDF reduz a imagem de 2400 px)
 _SECTION_WIDTH = 270
 
@@ -91,9 +93,7 @@ def calculation_report(
 def _inputs(project: Project, drawings: bool) -> list[str]:
     g, m, loads, d = project.geometry, project.materials, project.loads, project.detailing
     cap = g.cap
-    tie_height = cap.cover + d.bar_diameter / 2.0  # D8
-    if project.result is not None:  # φ adotado pela D18, que pode ser maior que o digitado
-        tie_height = float(project.result.audit.parameters.get("tie_height_mm", tie_height))
+    tie_height = tie_axis_height(project)
     forms = [
         "<h3>Forma (cotas em cm)</h3>",
         _figure(form_plan(g), _PLAN_WIDTH, "Planta de forma"),
@@ -281,23 +281,9 @@ def _reinforcement_drawings(project: Project, result: AnalysisResult) -> list[st
             "comprimento médio na tabela."
         ),
         "<h3>Tabela de aço</h3>",
-        _table(
-            ("Posição", "φ [mm]", "Quantidade", "C unitário [cm]", "C total [m]"),
-            [
-                (
-                    p.id,
-                    _phi(p.bar_diameter),
-                    str(p.count),
-                    ("var. (média " if p.variable_length else "")
-                    + _n(p.length / 10, 0)
-                    + (")" if p.variable_length else ""),
-                    _n(p.count * p.length / 1e3, 2),
-                )
-                for p in positions
-            ],
-        ),
+        _table(STEEL_SCHEDULE_HEAD, steel_schedule(positions)),
         "<h3>Resumo de aço</h3>",
-        _table(("φ [mm]", "C total [m]", "Massa [kg]"), _steel_summary(positions)),
+        _table(STEEL_SUMMARY_HEAD, steel_summary(positions)),
         _paragraph(
             f"Massa específica do aço de {_STEEL_DENSITY:g} kg/m³ (NBR 6118:2023, 8.3.3), sem "
             "perdas nem emendas."
@@ -305,7 +291,31 @@ def _reinforcement_drawings(project: Project, result: AnalysisResult) -> list[st
     ]
 
 
-def _steel_summary(positions: Sequence[BarPosition]) -> list[tuple[str, str, str]]:
+def tie_axis_height(project: Project) -> float:
+    """Altura do eixo do tirante sobre o topo da estaca (D8), com o φ adotado pela D18."""
+    tie_height = project.geometry.cap.cover + project.detailing.bar_diameter / 2.0
+    if project.result is not None:  # φ adotado pela D18, que pode ser maior que o digitado
+        tie_height = float(project.result.audit.parameters.get("tie_height_mm", tie_height))
+    return tie_height
+
+
+def steel_schedule(positions: Sequence[BarPosition]) -> list[tuple[str, str, str, str, str]]:
+    """Linhas da tabela de aço (D19), na ordem de `STEEL_SCHEDULE_HEAD`."""
+    return [
+        (
+            p.id,
+            _phi(p.bar_diameter),
+            str(p.count),
+            ("var. (média " if p.variable_length else "")
+            + _n(p.length / 10, 0)
+            + (")" if p.variable_length else ""),
+            _n(p.count * p.length / 1e3, 2),
+        )
+        for p in positions
+    ]
+
+
+def steel_summary(positions: Sequence[BarPosition]) -> list[tuple[str, str, str]]:
     """Comprimento e massa por φ; a última linha é o total."""
     lengths: dict[float, float] = {}
     for p in positions:
