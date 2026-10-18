@@ -83,7 +83,7 @@
 | Cobrimento | 7.4.7, Tab. 7.2 | `cnom = cmín + Δc`, Δc = 10 mm (5 mm com controle rigoroso explicitado em projeto); elementos em contato com o solo: cnom = 30 mm (CAA I e II), 40 mm (III), 50 mm (IV); cnom ≥ φ da barra; pode reduzir 5 mm com concreto acima da classe mínima. NBR 6122:2019, 8.6.2 remete à 6118 | Pinada |
 | Espaçamento livre entre barras | 18.3.2.2 | Horizontal `ah ≥ máx(20 mm; φ; 1,2·dmáx)`; vertical `av ≥ máx(20 mm; φ; 0,5·dmáx)`; dmáx = dimensão máxima característica do agregado graúdo; feixes pelo diâmetro equivalente | Pinada (D18, Rodrigo, 18/10/2026) |
 | Lajes: prescrições gerais | 20.1 | φ ≤ h/8; armadura principal com espaçamento ≤ mín(2h; 20 cm) na região dos maiores momentos, ou ≤ 15φ para φ ≥ 20 mm; secundária ≥ 20 % da principal com espaçamento ≤ 33 cm | Pinada (D18, Rodrigo, 18/10/2026) |
-| Massa específica do aço | 8.3.3 | Armadura passiva: 7 850 kg/m³ | Proposta (D19) |
+| Massa específica do aço | 8.3.3 | Armadura passiva: 7 850 kg/m³ | Pinada (D19, Rodrigo, 18/10/2026) |
 | Combinações | 11.8.2 (6118) + NBR 8681:2025 §5.1.4 | γf, ψ0 | Pendente |
 
 ## 3. Mapa de cláusulas (NBR 6122:2019, Em1:2022)
@@ -519,7 +519,7 @@ Hoje o programa entrega só `As` e o diâmetro digitado, e a ancoragem supõe `A
   barras de flexão do bloco flexível seguem a mesma regra (o φ sobe e o modelo é refeito).
 - (C) Aceitar segunda camada, com `d′` no centroide do grupo de barras e `av` da 18.3.2.2.
 
-## 4.10 Desenho de armação (especificação, D19 proposta)
+## 4.10 Desenho de armação (especificação, D19 aprovada)
 
 Objetivo: levar as barras escolhidas pela D18 ao papel, com planta e cortes da armação, posições
 numeradas (N1, N2...) e a tabela de aço com comprimentos e massa. Hoje o memorial mostra só a
@@ -604,7 +604,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D16 | Estacas como apoios elásticos no MEF: rigidez axial opcional por estaca dada pelo usuário (sem valor padrão), cabeça rígida com mola; com molas, reações do MEF comparadas ao M1 com alerta acima de 10 % em vez do critério de validade de 1 % (§4.7, ADR-007) | Aprovada (Rodrigo, 16/10/2026) |
 | D17 | Fileiras desencontradas: isoáreas do pilar proporcionais às reações e deslocadas da excentricidade, tirantes na triangulação das estacas pelo mínimo de `Σ F·l` (critério da D12) e, entre os ótimos, o de menor `Σ F²` (§4.8) | Aprovada (Rodrigo, 17/10/2026) |
 | D18 | Escolha de barras: quantidade pelo φ do usuário, uma camada na faixa 1,2·φ com espaçamento da 18.3.2.2, ancoragem com a área efetiva, malha com φ mínimo e espaçamento entre 100 mm e o máximo da 20.1 (§4.9) | Aprovada (Rodrigo, 18/10/2026); opção (B) para tirante que não cabe escolhida em 17/10/2026 |
-| D19 | Desenho de armação: barras dos tirantes na faixa de face a face com gancho, malha em toda a largura, posições numeradas com comprimento pela linha de centro, camadas x, y e diagonais, tabela de aço com 7 850 kg/m³ (§4.10) | Proposta (Claude, 18/10/2026); gancho a 90° com 8φ escolhido por Rodrigo em 18/10/2026 |
+| D19 | Desenho de armação: barras dos tirantes na faixa de face a face com gancho, malha em toda a largura, posições numeradas com comprimento pela linha de centro, camadas x, y e diagonais, tabela de aço com 7 850 kg/m³ (§4.10) | Aprovada (Rodrigo, 18/10/2026); gancho a 90° com 8φ escolhido por Rodrigo em 18/10/2026 |
 
 ## 7. Ainda falta neste documento
 
