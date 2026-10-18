@@ -544,7 +544,7 @@ forma e a treliça (ADR-008), e o resultado não guarda onde cada barra fica.
 | Etapa | Regra | Fonte |
 |---|---|---|
 | Barras dos tirantes | Uma posição por linha de barras (trechos alinhados, D13) com as `n` barras da D18, paralelas à linha das estacas e distribuídas na faixa com o espaçamento `φ + ah` (18.3.2.2), centradas na linha. Cada barra vai de face a face do bloco, recortada pelo cobrimento | 22.7.4.1.1, D18 |
-| Ganchos | Ver a decisão abaixo. Pino de dobramento da Tab. 9.1 (5φ abaixo de 20 mm, 8φ a partir de 20 mm, CA-50); comprimento pela linha de centro da barra (trecho reto + arco + ponta), arredondado para cima de 1 em 1 cm | 9.4.2.3 |
+| Ganchos | 90° com ponta de 8φ (opção A abaixo). Pino de dobramento da Tab. 9.1 (5φ abaixo de 20 mm, 8φ a partir de 20 mm, CA-50); comprimento pela linha de centro da barra (trecho reto + arco + ponta), arredondado para cima de 1 em 1 cm | 9.4.2.3 |
 | Malha | Barras em toda a largura do bloco, com o φ e o espaçamento da D18 e o mesmo gancho dos tirantes; a malha passa também pelas faixas (a favor da segurança) | 22.7.4.1.2, D18 |
 | Bloco flexível | Barras de flexão como a malha, em toda a largura | D9, D18 |
 | Posições | Barras com o mesmo φ, a mesma forma e o mesmo comprimento formam uma posição, numerada a partir dos tirantes de maior φ. Barras de uma mesma linha com comprimentos diferentes formam uma posição de comprimento variável | Prática de projeto |
@@ -554,9 +554,9 @@ forma e a treliça (ADR-008), e o resultado não guarda onde cada barra fica.
 | Avisos | Barra mais longa que 12 m (comprimento comercial usual): aviso de emenda, sem calcular o traspasse. Suspensão e armadura lateral (D11) não são desenhadas | Prática de projeto; D11 |
 | Saída | O resultado ganha a lista de posições com as linhas de cada barra em planta (ADR-010), salva no `.bloco`; memorial e tela desenham a partir dela | ADR-010 |
 
-**Decisão pendente: forma do gancho dos tirantes e da malha.**
-- (A) Gancho a 90° com ponta reta de 8φ, virado para cima (recomendada; é o usual em blocos e o
-  que o protótipo usou).
+**Forma do gancho dos tirantes e da malha: opção (A), escolhida por Rodrigo em 18/10/2026.**
+- (A) Gancho a 90° com ponta reta de 8φ, virado para cima (é o usual em blocos e o que o
+  protótipo usou). **Escolhida.** Com "sem gancho" na entrada, as barras saem retas.
 - (B) Gancho a 90° com a ponta subindo até o topo do bloco, menos o cobrimento (prática de
   alguns escritórios para amarrar a armadura superior; mais aço).
 - (C) Gancho semicircular com ponta de 2φ (o menor permitido pela 9.4.2.3).
@@ -604,7 +604,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D16 | Estacas como apoios elásticos no MEF: rigidez axial opcional por estaca dada pelo usuário (sem valor padrão), cabeça rígida com mola; com molas, reações do MEF comparadas ao M1 com alerta acima de 10 % em vez do critério de validade de 1 % (§4.7, ADR-007) | Aprovada (Rodrigo, 16/10/2026) |
 | D17 | Fileiras desencontradas: isoáreas do pilar proporcionais às reações e deslocadas da excentricidade, tirantes na triangulação das estacas pelo mínimo de `Σ F·l` (critério da D12) e, entre os ótimos, o de menor `Σ F²` (§4.8) | Aprovada (Rodrigo, 17/10/2026) |
 | D18 | Escolha de barras: quantidade pelo φ do usuário, uma camada na faixa 1,2·φ com espaçamento da 18.3.2.2, ancoragem com a área efetiva, malha com φ mínimo e espaçamento entre 100 mm e o máximo da 20.1 (§4.9) | Aprovada (Rodrigo, 18/10/2026); opção (B) para tirante que não cabe escolhida em 17/10/2026 |
-| D19 | Desenho de armação: barras dos tirantes na faixa de face a face com gancho, malha em toda a largura, posições numeradas com comprimento pela linha de centro, camadas x, y e diagonais, tabela de aço com 7 850 kg/m³ (§4.10) | Proposta (Claude, 18/10/2026) |
+| D19 | Desenho de armação: barras dos tirantes na faixa de face a face com gancho, malha em toda a largura, posições numeradas com comprimento pela linha de centro, camadas x, y e diagonais, tabela de aço com 7 850 kg/m³ (§4.10) | Proposta (Claude, 18/10/2026); gancho a 90° com 8φ escolhido por Rodrigo em 18/10/2026 |
 
 ## 7. Ainda falta neste documento
 

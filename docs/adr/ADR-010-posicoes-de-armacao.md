@@ -10,7 +10,8 @@
      média quando variável], `variable_length: bool`, `hook: HookShape`, `layer: int` (1 a 3),
      `reinforcement_ids` (as armaduras do resultado que a posição atende) e `bars`, uma tupla
      com as extremidades em planta de cada barra, `((x0, y0), (x1, y1))` em mm.
-  2. `HookShape`, enum com a forma escolhida na D19.
+  2. `HookShape`, enum com a forma escolhida na D19 (90° com ponta de 8φ) e "sem gancho", para
+     a entrada sem ganchos.
   3. `AnalysisResult` ganha `bar_positions: tuple[BarPosition, ...] = ()`. Resultados antigos
      abrem sem posições; o hash das entradas não muda, porque o gancho não é entrada neste
      ciclo (é a regra da D19).
