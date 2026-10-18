@@ -1,6 +1,6 @@
 # ADR-009 — Barras escolhidas no resultado (schemas v6)
 
-- Status: proposta
+- Status: aceita (Rodrigo, 18/10/2026)
 - Contexto: a D18 (docs/02-metodos.md §4.9) escolhe as barras de cada armadura. O resultado
   (`Reinforcement`, ADR-002) só tem a área necessária e o diâmetro digitado, e a entrada
   (`DetailingInput`) não tem o agregado graúdo, que a 18.3.2.2 usa no espaçamento livre.
