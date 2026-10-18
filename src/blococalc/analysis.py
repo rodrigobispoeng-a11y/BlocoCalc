@@ -7,6 +7,7 @@ Premissas aprovadas (docs/02-metodos.md §6, registradas na trilha de auditoria)
   (NBR 6122:2019, 5.6, mínimo de 5 % da carga permanente; a favor da segurança porque a
   normal de cálculo inclui as variáveis);
 - D8: eixo do tirante a d′ = cobrimento + φ/2 acima da cabeça da estaca;
+- D20: cada tirante com o d′ da sua camada (x, y e diagonais, φ acima uma da outra);
 - D9: bloco flexível pelas seções S1 do CEB-70 com flexão, cisalhamento e punção da NBR 6118
   (docs/02-metodos.md §4.2);
 - D10: vários pilares viram um pilar fictício de área equivalente por caso; as reações usam os
@@ -24,7 +25,7 @@ import itertools
 import json
 import math
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from blococalc import __version__
@@ -37,7 +38,7 @@ from blococalc.core.strut_tie import (
     Tie,
     santos_stucchi,
 )
-from blococalc.geometry.bar_layout import BarRun, MeshBars, bar_positions
+from blococalc.geometry.bar_layout import BarRun, MeshBars, bar_layer, bar_positions
 from blococalc.geometry.fictitious_column import fictitious_column
 from blococalc.schemas import (
     AnalysisResult,
@@ -86,7 +87,7 @@ METHOD = "santos-stucchi-2019"
 FLEXIBLE_METHOD = "ceb70-nbr6118-flexao"  # ADR-003
 SECONDARY_RATIO = 0.20  # CEB-70 §3.2: armadura transversal ≥ 1/5 da principal
 SELF_WEIGHT_RATIO = 0.05  # D7
-_HASH_FORMAT = "6"  # ADR-007 e ADR-009: formato do hash das entradas
+_HASH_FORMAT = "7"  # ADR-007, ADR-009 e D20: formato do hash das entradas
 _M7_TOLERANCE = 0.01  # diferença numérica aceita no confronto D10 × M7
 
 _TIE_REF = Reference(source="NBR 6118:2023", item="22.3.3 / 22.7.4.1.1")
@@ -103,6 +104,8 @@ _ASSUMPTIONS = (
     "Pilar retangular tratado por direção com as dimensões reais (D4, provisória).",
     "Peso próprio do bloco = 5 % da normal de cálculo de cada caso (D7).",
     "Eixo do tirante a cobrimento + φ/2 acima da cabeça da estaca (D8).",
+    "Tirantes em y φ acima e diagonais 2φ acima, cada um com o braço da sua camada; bielas e "
+    "nó do pilar pela camada mais alta, nó da estaca pela 1ª (D20).",
     "Ancoragem com As,calc/As,ef = 1 enquanto as barras não são escolhidas.",
 )
 _FLEXIBLE_ASSUMPTIONS = (
@@ -236,7 +239,8 @@ def _analyze_with(
 ) -> AnalysisResult:
     """Análise com o diâmetro de `options`, sem trocar de barra."""
     multiple = len(geometry.columns) > 1
-    tie_height = geometry.cap.cover + options.bar_diameter / 2.0
+    phi = options.bar_diameter
+    tie_height = geometry.cap.cover + phi / 2.0
     strengths = strut_tie_strengths(materials)
 
     rigidity = rigidity_checks(geometry.cap, _model_inputs(geometry, loads.cases[0])[0].columns[0])
@@ -251,6 +255,7 @@ def _analyze_with(
     reactions: list[PileReaction] = []
     envelope: dict[str, Reinforcement] = {}
     corrections: dict[str, float] = {}  # D17: um por caso com fileiras desencontradas
+    heights: dict[int, float] = {}  # D20: d′ de cada camada de tirantes presente
     ties: dict[tuple[str, str], Tie] = {}  # D19: tirantes de todos os casos, para as posições
 
     for case in loads.cases:
@@ -270,27 +275,21 @@ def _analyze_with(
             _merge(envelope, flex_items)
             continue
         model_geometry, _ = _model_inputs(geometry, case)
-        model = santos_stucchi(model_geometry, case_reactions, strengths, loads.gamma_n, tie_height)
-        result = rigid_cap_detailing(model_geometry, model.ties, materials, options, tie_height)
+        layered = _layered_model(
+            model_geometry, case_reactions, strengths, loads.gamma_n, (geometry.cap.cover, phi)
+        )
+        model, heights = layered.design, heights | layered.heights
+        result = rigid_cap_detailing(model_geometry, model.ties, materials, options, layered.top)
         ties |= {(t.pile_a, t.pile_b): t for t in model.ties if (t.pile_a, t.pile_b) not in ties}
         checks += _tag(case.id, (*strut_tie_checks(model, strengths), *result.checks))
         if multiple:
-            normals = {load.column_id: load.n for load in case.column_loads}
-            real = real_column_node_checks(
-                model, geometry.columns, normals, loads.gamma_n, strengths
-            )
-            checks += _tag(case.id, real)
-            ratio = SELF_WEIGHT_RATIO if loads.include_cap_self_weight else 0.0
-            m7_checks, m7_warnings = _space_truss_comparison(
-                geometry, case, loads.gamma_n, ratio, model
-            )
-            checks += _tag(case.id, m7_checks)
+            column_checks, m7_warnings = _real_columns(geometry, case, loads, strengths, layered)
+            checks += _tag(case.id, column_checks)
             warnings += m7_warnings
         warnings += [w for w in result.warnings if w not in warnings]
         notes, layout_warnings = _layout_notes(case.id, model)
         corrections |= notes
         warnings += [w for w in layout_warnings if w not in warnings]
-        phi = options.bar_diameter
         items = [
             Reinforcement(
                 id=f"tirante_{t.pile_a}_{t.pile_b}",
@@ -350,6 +349,7 @@ def _analyze_with(
             parameters={
                 "gamma_n": loads.gamma_n,
                 "tie_height_mm": tie_height,
+                **{f"tie_height_layer_{k}_mm": v for k, v in sorted(heights.items()) if k > 1},
                 "bar_diameter_mm": options.bar_diameter,
                 "self_weight_ratio": SELF_WEIGHT_RATIO if loads.include_cap_self_weight else 0.0,
                 "aggressiveness_class": options.aggressiveness_class.value,
@@ -358,6 +358,25 @@ def _analyze_with(
             input_hash=_input_hash(geometry, materials, loads, options),
         ),
     )
+
+
+def _real_columns(
+    geometry: GeometryInput,
+    case: LoadCase,
+    loads: LoadsInput,
+    strengths: StrutTieStrengths,
+    layered: _LayeredModel,
+) -> tuple[list[Check], list[str]]:
+    """Nó de cada pilar real (D10) e confronto com a treliça 3D (D12) na 1ª camada (D20)."""
+    normals = {load.column_id: load.n for load in case.column_loads}
+    checks = list(
+        real_column_node_checks(layered.design, geometry.columns, normals, loads.gamma_n, strengths)
+    )
+    ratio = SELF_WEIGHT_RATIO if loads.include_cap_self_weight else 0.0
+    m7_checks, m7_warnings = _space_truss_comparison(
+        geometry, case, loads.gamma_n, ratio, layered.base
+    )
+    return checks + list(m7_checks), m7_warnings
 
 
 def _flexible_warnings(warnings: list[str]) -> None:
@@ -580,13 +599,13 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
             # M1 com a mesma carga do MEF (D7 junto com os pilares) para validar o modelo.
             m1 = {r.pile_id: factor * r.force for r in rigid_cap_reactions(geometry, case)}
             model_geometry, _ = _model_inputs(geometry, case)
-            model = santos_stucchi(
+            model = _layered_model(  # D20: tração do MEF contra as forças de projeto
                 model_geometry,
                 rigid_cap_reactions(geometry, case, ratio * sum(x.n for x in case.column_loads)),
                 strengths,
                 loads.gamma_n,
-                tie_height,
-            )
+                (geometry.cap.cover, phi),
+            ).design
             reaction_checks = (
                 _fem_spring_checks(fem, m1) if stiffness else _fem_reaction_checks(fem, m1)
             )
@@ -639,8 +658,9 @@ def strut_tie_layout(project: Project, case_id: str) -> StrutTieLayout | None:
     """Nós e barras do modelo M5 de um caso, para a visualização 3D (ADR-006).
 
     Refaz o mesmo modelo de `analyze()` (Santos/Stucchi, D13, D15; pilar fictício D10 com
-    vários pilares). z a partir da face inferior: nó da estaca na altura do tirante (D8), nó
-    superior de cada biela a y/2 do topo. Bloco flexível (D9) não tem treliça: devolve None.
+    vários pilares). z a partir da face inferior: nó da estaca na camada mais alta de tirantes
+    (D8, D20), a mesma do braço das bielas, e nó superior de cada biela a y/2 do topo. Bloco
+    flexível (D9) não tem treliça: devolve None.
     """
     geometry, loads = project.geometry, project.loads
     case = next((c for c in loads.cases if c.id == case_id), None)
@@ -651,7 +671,6 @@ def strut_tie_layout(project: Project, case_id: str) -> StrutTieLayout | None:
     if any(c.status is not CheckStatus.OK for c in rigidity):
         return None
     phi = adopted_bar_diameter(geometry, project.materials, loads, project.detailing)  # D18
-    tie_height = geometry.cap.cover + phi / 2.0
     self_weight = (
         SELF_WEIGHT_RATIO * sum(load.n for load in case.column_loads)
         if loads.include_cap_self_weight
@@ -659,14 +678,15 @@ def strut_tie_layout(project: Project, case_id: str) -> StrutTieLayout | None:
     )
     reactions = rigid_cap_reactions(geometry, case, self_weight)
     model_geometry, _ = _model_inputs(geometry, case)
-    model = santos_stucchi(
+    layered = _layered_model(  # D20: tirantes por camada, bielas pela camada mais alta
         model_geometry,
         reactions,
         strut_tie_strengths(project.materials),
         loads.gamma_n,
-        tie_height,
+        (geometry.cap.cover, phi),
     )
-    pile_z = geometry.cap.pile_embedment + tie_height
+    model = layered.design
+    pile_z = geometry.cap.pile_embedment + layered.top  # nó da estaca no braço das bielas
     top_z = geometry.cap.h - model.y / 2.0
     nodes = [LayoutNode(id=f"estaca_{p.id}", x=p.x, y=p.y, z=pile_z) for p in geometry.piles]
     members: list[LayoutMember] = []
@@ -896,6 +916,50 @@ def _space_truss_comparison(
     return checks, warnings
 
 
+@dataclass(frozen=True)
+class _LayeredModel:
+    design: StrutTieModel  # bielas da camada mais alta, cada tirante com a sua camada
+    base: StrutTieModel  # 1ª camada: confronto com a M7 (D12)
+    heights: dict[int, float]  # d′ de cada camada presente [mm]
+
+    @property
+    def top(self) -> float:
+        return max(self.heights.values())
+
+
+def _layered_model(
+    geometry: GeometryInput,
+    reactions: Sequence[PileReaction],
+    strengths: StrutTieStrengths,
+    gamma_n: float,
+    bars: tuple[float, float],
+) -> _LayeredModel:
+    """M5 com a altura útil de cada camada (D20, docs/02-metodos.md §4.11).
+
+    Camadas da D19: x na 1ª, y na 2ª, diagonais na 3ª, com d′k = c + φ/2 + (k − 1)·φ (`bars` =
+    cobrimento e φ dos tirantes). Cada tirante sai do modelo refeito com o d′ da sua camada; as
+    bielas e o nó do pilar, do modelo da camada mais alta (menor z); o nó da estaca fica com a
+    área ampliada da 1ª camada. As duas escolhas ficam a favor da segurança.
+    """
+    cover, phi = bars
+    first = cover + phi / 2.0
+    base = santos_stucchi(geometry, reactions, strengths, gamma_n, first)
+    layers = sorted({bar_layer((t.dir_x, t.dir_y)) for t in base.ties})
+    heights = {k: first + (k - 1) * phi for k in layers}
+    models = {
+        k: base
+        if k == 1
+        else santos_stucchi(geometry, reactions, strengths, gamma_n, h, pile_node_height=first)
+        for k, h in heights.items()
+    }
+    if not models:  # sem tirantes: nada a separar por camada
+        return _LayeredModel(design=base, base=base, heights={1: first})
+    by_key = {k: {(t.pile_a, t.pile_b): t for t in m.ties} for k, m in models.items()}
+    ties = tuple(by_key[bar_layer((t.dir_x, t.dir_y))][(t.pile_a, t.pile_b)] for t in base.ties)
+    design = replace(models[layers[-1]], ties=ties)
+    return _LayeredModel(design=design, base=base, heights=heights)
+
+
 def _layout_notes(case_id: str, model: StrutTieModel) -> tuple[dict[str, float], list[str]]:
     """Avisos do estaqueamento (D15, D17) e a correção dos empuxos para a trilha (D17)."""
     warnings = [_interior_pile_warning(model.interior_piles)] if model.interior_piles else []
@@ -962,7 +1026,8 @@ def _input_hash(*inputs: GeometryInput | MaterialsInput | LoadsInput | Detailing
 
     ADR-007: campos novos e opcionais (como a rigidez das estacas) e a troca da versão do
     contrato não invalidam os resultados salvos de entradas que não os usam. ADR-009: o formato
-    passou a "6" para os resultados salvos sem barras ficarem desatualizados.
+    passou a "6" para os resultados salvos sem barras ficarem desatualizados; D20: passou a "7"
+    porque as forças dos tirantes das camadas de cima mudaram.
     """
     digest = hashlib.sha256()
     for item in inputs:

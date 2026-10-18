@@ -35,10 +35,11 @@ def project(*normals: float) -> Project:
 
 @pytest.mark.golden
 def test_b1_layout_places_nodes_and_forces() -> None:
-    # Mesmos números do golden de analyze(): Rd = 1,2·1,05·245 kN, d = 842, d′ = 58.
+    # Mesmos números do golden de analyze(): Rd = 1,2·1,05·245 kN. D20: as bielas saem da camada
+    # mais alta (tirantes em y, d′ = 58 + 16 = 74, d = 826), e o nó da estaca fica nela.
     layout = strut_tie_layout(project(980e3), "C1")
     assert layout is not None
-    rd, d = 1.2 * 257.25e3, 842.0
+    rd, d = 1.2 * 257.25e3, 826.0
     y = node_depth(d, 200.0, 2.0 * rd * 437.5 / strut_tie_strengths(C35).fcd1)
     z = d - y / 2.0
     nodes = {n.id: n for n in layout.nodes}
@@ -46,7 +47,7 @@ def test_b1_layout_places_nodes_and_forces() -> None:
 
     assert layout.case_id == "C1"
     pile = nodes["estaca_E2"]
-    assert (pile.x, pile.y, pile.z) == pytest.approx((600.0, -600.0, 100.0 + 58.0))
+    assert (pile.x, pile.y, pile.z) == pytest.approx((600.0, -600.0, 100.0 + 74.0))
     top = nodes["topo_E2"]
     # Biela parte do centroide do quadrante do pilar 200×650 voltado para a estaca (D13).
     assert (top.x, top.y, top.z) == pytest.approx((50.0, -162.5, 1000.0 - y / 2.0))
@@ -58,9 +59,11 @@ def test_b1_layout_places_nodes_and_forces() -> None:
     length = math.dist((top.x, top.y, top.z), (pile.x, pile.y, pile.z))
     assert strut.force_d == pytest.approx(rd * length / z, rel=1e-6)
 
-    tie = members["tirante_E1_E2"]
+    tie = members["tirante_E1_E2"]  # em x, na 1ª camada: d = 842
+    z1 = 842.0 - node_depth(842.0, 200.0, 2.0 * rd * 437.5 / strut_tie_strengths(C35).fcd1) / 2.0
     assert tie.kind is LayoutMemberKind.TIE
-    assert tie.force_d == pytest.approx(rd * 550.0 / z, rel=1e-6)
+    assert tie.force_d == pytest.approx(rd * 550.0 / z1, rel=1e-6)
+    assert members["tirante_E2_E3"].force_d == pytest.approx(rd * 437.5 / z, rel=1e-6)
     assert len([m for m in layout.members if m.kind is LayoutMemberKind.STRUT]) == 4
     assert len([m for m in layout.members if m.kind is LayoutMemberKind.TIE]) == 4
 

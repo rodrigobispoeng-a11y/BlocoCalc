@@ -38,10 +38,17 @@ def test_b2_full_analysis() -> None:
     areas = {r.id: r.area_required for r in result.reinforcement}
     assert areas["tirante_E2_E3"] == pytest.approx(8014.0, rel=0.02)  # 80,14 cm², §4.4
     assert areas["tirante_E1_E2"] == pytest.approx(6010.0, rel=0.02)
-    assert areas["tirante_E1_E5"] == pytest.approx(2767.0, rel=0.02)
+    # Tirante em y na 2ª camada (D20): 27,67 cm² com o d′ da 1ª camada, 28,75 cm² com φ acima.
+    assert areas["tirante_E1_E5"] == pytest.approx(2875.0, rel=0.02)
     assert areas["malha_x"] == pytest.approx(0.2 * 2 * areas["tirante_E2_E3"])
     failed = {c.id for c in result.checks if c.status is CheckStatus.FAIL}
-    assert all(f.startswith("C1:ancoragem_") for f in failed)  # 450 mm de borda; φ32 pela D18
+    # Ancoragem: 450 mm de borda, φ32 pela D18. D20: as bielas saem da 2ª camada (z menor), e o
+    # nó das estacas de canto passa de fcd3 (15,77 > 15,48 MPa); θ < 45° e y/d = 0,31 só ficam
+    # fora das recomendações dos autores.
+    corners = ("E1", "E4", "E5", "E8")
+    assert {f for f in failed if not f.startswith("C1:ancoragem_")} == {
+        f"C1:no_estaca_{e}" for e in corners
+    }
 
 
 def b6() -> tuple[GeometryInput, LoadsInput]:

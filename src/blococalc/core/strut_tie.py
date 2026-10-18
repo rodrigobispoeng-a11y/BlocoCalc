@@ -105,14 +105,20 @@ class StrutTieModel:
     equilibrium_correction: float = 0.0  # D17: correção dos empuxos / maior empuxo
 
 
-def santos_stucchi(
+def santos_stucchi(  # noqa: PLR0913 - entradas do modelo e d′ do nó da estaca (D20)
     geometry: GeometryInput,
     reactions: Sequence[PileReaction],
     strengths: NodeStrengths,
     gamma_n: float,
     tie_height: float,
+    *,
+    pile_node_height: float | None = None,
 ) -> StrutTieModel:
-    """Resolve o modelo para um caso de carga. `reactions` vem de `rigid_cap_reactions`."""
+    """Resolve o modelo para um caso de carga. `reactions` vem de `rigid_cap_reactions`.
+
+    `pile_node_height` é o d′ da área ampliada no nó da estaca; sem ele, vale `tie_height`.
+    A D20 refaz o modelo para cada camada de tirantes e mantém o nó da estaca na 1ª camada.
+    """
     if len(geometry.columns) != 1:
         raise UnsupportedLayoutError("Modelo v1 aceita um único pilar por bloco")
     column = geometry.columns[0]
@@ -123,6 +129,7 @@ def santos_stucchi(
         raise UnsupportedLayoutError("Estaca tracionada: fora do escopo do modelo v1")
 
     d = geometry.cap.h - geometry.cap.pile_embedment - tie_height
+    node_height = tie_height if pile_node_height is None else pile_node_height
     l_proj = [math.hypot(p.x - ox, p.y - oy) for p, (ox, oy, _) in zip(piles, origins, strict=True)]
     forces = [by_id[p.id] for p in piles]
 
@@ -162,7 +169,7 @@ def santos_stucchi(
                 sigma_column_node=force / (area_column * share * sin2),
                 sigma_pile_node=force
                 * (INTERIOR_PILE_FACTOR if pile.id in inner_ids else 1.0)
-                / (_pile_spread_area(pile, tie_height) * sin2),
+                / (_pile_spread_area(pile, node_height) * sin2),
             )
         )
     correction = 0.0
