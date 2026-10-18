@@ -83,6 +83,7 @@
 | Cobrimento | 7.4.7, Tab. 7.2 | `cnom = cmín + Δc`, Δc = 10 mm (5 mm com controle rigoroso explicitado em projeto); elementos em contato com o solo: cnom = 30 mm (CAA I e II), 40 mm (III), 50 mm (IV); cnom ≥ φ da barra; pode reduzir 5 mm com concreto acima da classe mínima. NBR 6122:2019, 8.6.2 remete à 6118 | Pinada |
 | Espaçamento livre entre barras | 18.3.2.2 | Horizontal `ah ≥ máx(20 mm; φ; 1,2·dmáx)`; vertical `av ≥ máx(20 mm; φ; 0,5·dmáx)`; dmáx = dimensão máxima característica do agregado graúdo; feixes pelo diâmetro equivalente | Pinada (D18, Rodrigo, 18/10/2026) |
 | Lajes: prescrições gerais | 20.1 | φ ≤ h/8; armadura principal com espaçamento ≤ mín(2h; 20 cm) na região dos maiores momentos, ou ≤ 15φ para φ ≥ 20 mm; secundária ≥ 20 % da principal com espaçamento ≤ 33 cm | Pinada (D18, Rodrigo, 18/10/2026) |
+| Massa específica do aço | 8.3.3 | Armadura passiva: 7 850 kg/m³ | Proposta (D19) |
 | Combinações | 11.8.2 (6118) + NBR 8681:2025 §5.1.4 | γf, ψ0 | Pendente |
 
 ## 3. Mapa de cláusulas (NBR 6122:2019, Em1:2022)
@@ -518,6 +519,48 @@ Hoje o programa entrega só `As` e o diâmetro digitado, e a ancoragem supõe `A
   barras de flexão do bloco flexível seguem a mesma regra (o φ sobe e o modelo é refeito).
 - (C) Aceitar segunda camada, com `d′` no centroide do grupo de barras e `av` da 18.3.2.2.
 
+## 4.10 Desenho de armação (especificação, D19 proposta)
+
+Objetivo: levar as barras escolhidas pela D18 ao papel, com planta e cortes da armação, posições
+numeradas (N1, N2...) e a tabela de aço com comprimentos e massa. Hoje o memorial mostra só a
+forma e a treliça (ADR-008), e o resultado não guarda onde cada barra fica.
+
+**Achados no protótipo** (gancho a 90° com ponta de 8φ, pino da Tab. 9.1, cobrimento 5 cm).
+- B1: 10 N1 φ16 de 222 cm (os tirantes em x e em y têm o mesmo comprimento no bloco quadrado) e
+  a malha φ6,3 c/20, 20 barras de 202 cm; 35,0 kg de φ16 e 9,9 kg de φ6,3.
+- B2 (φ32 adotado): 22 φ32 de 598 cm nas linhas em x, 16 φ32 de 298 cm nas linhas em y, malha
+  φ16 c/14 (17 barras de 560 cm) e φ8 c/12 (45 de 245 cm); 1132 kg de φ32.
+- B7: as diagonais cruzam o bloco de canto a canto e as barras da faixa, deslocadas da linha
+  das estacas, têm comprimentos diferentes (de 569 a 608 cm). Elas entram numa só posição com
+  comprimento variável ("C = var.", média na tabela).
+- Em planta, as barras dos tirantes em x, em y e nas diagonais se cruzam sobre as estacas. O
+  desenho as põe em camadas (x por baixo, depois y, depois diagonais), e o eixo das camadas de
+  cima fica φ acima do `d′` da D8, que o modelo usa igual para todas. A diferença na altura útil fica abaixo de
+  3 % nos benchmarks (B2: 32 mm em 1234 mm; B1: 16 mm em 842 mm); fica registrada como premissa
+  no memorial e não muda o cálculo neste ciclo.
+
+**Especificação (D19).**
+
+| Etapa | Regra | Fonte |
+|---|---|---|
+| Barras dos tirantes | Uma posição por linha de barras (trechos alinhados, D13) com as `n` barras da D18, paralelas à linha das estacas e distribuídas na faixa com o espaçamento `φ + ah` (18.3.2.2), centradas na linha. Cada barra vai de face a face do bloco, recortada pelo cobrimento | 22.7.4.1.1, D18 |
+| Ganchos | 90° com ponta de 8φ (opção A abaixo). Pino de dobramento da Tab. 9.1 (5φ abaixo de 20 mm, 8φ a partir de 20 mm, CA-50); comprimento pela linha de centro da barra (trecho reto + arco + ponta), arredondado para cima de 1 em 1 cm | 9.4.2.3 |
+| Malha | Barras em toda a largura do bloco, com o φ e o espaçamento da D18 e o mesmo gancho dos tirantes; a malha passa também pelas faixas (a favor da segurança) | 22.7.4.1.2, D18 |
+| Bloco flexível | Barras de flexão como a malha, em toda a largura | D9, D18 |
+| Posições | Barras com o mesmo φ, a mesma forma e o mesmo comprimento formam uma posição, numerada a partir dos tirantes de maior φ. Barras de uma mesma linha com comprimentos diferentes formam uma posição de comprimento variável | Prática de projeto |
+| Camadas | Tirantes e malha em x na 1ª camada, em y na 2ª e diagonais na 3ª, cada uma φ acima da anterior | Prática de projeto |
+| Desenhos | Planta da armação inferior com todas as barras e o chamado de cada posição ("11 N1 φ32 C=598"); cortes pela primeira linha de estacas em x e em y, com as barras paralelas em elevação (ganchos) e as cruzadas em seção | ADR-008 |
+| Tabela de aço | Posição, φ, quantidade, comprimento unitário e total; resumo por φ com comprimento e massa (7 850 kg/m³, 8.3.3), sem perdas | 8.3.3 |
+| Avisos | Barra mais longa que 12 m (comprimento comercial usual): aviso de emenda, sem calcular o traspasse. Suspensão e armadura lateral (D11) não são desenhadas | Prática de projeto; D11 |
+| Saída | O resultado ganha a lista de posições com as linhas de cada barra em planta (ADR-010), salva no `.bloco`; memorial e tela desenham a partir dela | ADR-010 |
+
+**Forma do gancho dos tirantes e da malha: opção (A), escolhida por Rodrigo em 18/10/2026.**
+- (A) Gancho a 90° com ponta reta de 8φ, virado para cima (é o usual em blocos e o que o
+  protótipo usou). **Escolhida.** Com "sem gancho" na entrada, as barras saem retas.
+- (B) Gancho a 90° com a ponta subindo até o topo do bloco, menos o cobrimento (prática de
+  alguns escritórios para amarrar a armadura superior; mais aço).
+- (C) Gancho semicircular com ponta de 2φ (o menor permitido pela 9.4.2.3).
+
 ## 5. Benchmarks propostos
 
 Valores de referência serão **recalculados por nós** e conferidos contra a publicação. Diferenças
@@ -561,6 +604,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D16 | Estacas como apoios elásticos no MEF: rigidez axial opcional por estaca dada pelo usuário (sem valor padrão), cabeça rígida com mola; com molas, reações do MEF comparadas ao M1 com alerta acima de 10 % em vez do critério de validade de 1 % (§4.7, ADR-007) | Aprovada (Rodrigo, 16/10/2026) |
 | D17 | Fileiras desencontradas: isoáreas do pilar proporcionais às reações e deslocadas da excentricidade, tirantes na triangulação das estacas pelo mínimo de `Σ F·l` (critério da D12) e, entre os ótimos, o de menor `Σ F²` (§4.8) | Aprovada (Rodrigo, 17/10/2026) |
 | D18 | Escolha de barras: quantidade pelo φ do usuário, uma camada na faixa 1,2·φ com espaçamento da 18.3.2.2, ancoragem com a área efetiva, malha com φ mínimo e espaçamento entre 100 mm e o máximo da 20.1 (§4.9) | Aprovada (Rodrigo, 18/10/2026); opção (B) para tirante que não cabe escolhida em 17/10/2026 |
+| D19 | Desenho de armação: barras dos tirantes na faixa de face a face com gancho, malha em toda a largura, posições numeradas com comprimento pela linha de centro, camadas x, y e diagonais, tabela de aço com 7 850 kg/m³ (§4.10) | Proposta (Claude, 18/10/2026); gancho a 90° com 8φ escolhido por Rodrigo em 18/10/2026 |
 
 ## 7. Ainda falta neste documento
 
