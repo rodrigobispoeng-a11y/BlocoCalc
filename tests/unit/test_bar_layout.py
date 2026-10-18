@@ -159,4 +159,3 @@ def test_flexible_cap_gets_the_flexure_mesh() -> None:
     result = analyze(geometry, MaterialsInput(fck=30.0), _loads(2000e3))
     assert not result.rigid
     assert [p.reinforcement_ids for p in result.bar_positions] == [("flexao_x",), ("flexao_y",)]
-
