@@ -535,9 +535,9 @@ forma e a treliça (ADR-008), e o resultado não guarda onde cada barra fica.
   comprimento variável ("C = var.", média na tabela).
 - Em planta, as barras dos tirantes em x, em y e nas diagonais se cruzam sobre as estacas. O
   desenho as põe em camadas (x por baixo, depois y, depois diagonais), e o eixo das camadas de
-  cima fica φ acima do `d′` da D8, que o modelo usa igual para todas. A diferença no braço de
-  alavanca é de 2 a 4 % nos benchmarks; fica registrada como premissa no memorial e não muda o
-  cálculo neste ciclo.
+  cima fica φ acima do `d′` da D8, que o modelo usa igual para todas. A diferença na altura útil fica abaixo de
+  3 % nos benchmarks (B2: 32 mm em 1234 mm; B1: 16 mm em 842 mm); fica registrada como premissa
+  no memorial e não muda o cálculo neste ciclo.
 
 **Especificação (D19).**
 
