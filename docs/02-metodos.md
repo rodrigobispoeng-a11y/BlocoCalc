@@ -526,13 +526,13 @@ numeradas (N1, N2...) e a tabela de aço com comprimentos e massa. Hoje o memori
 forma e a treliça (ADR-008), e o resultado não guarda onde cada barra fica.
 
 **Achados no protótipo** (gancho a 90° com ponta de 8φ, pino da Tab. 9.1, cobrimento 5 cm).
-- B1: 10 N1 φ16 de 222 cm (os tirantes em x e em y têm o mesmo comprimento no bloco quadrado) e
-  a malha φ6,3 c/20, 20 barras de 202 cm; 35,0 kg de φ16 e 9,9 kg de φ6,3.
-- B2 (φ32 adotado): 22 φ32 de 598 cm nas linhas em x, 16 φ32 de 298 cm nas linhas em y, malha
-  φ16 c/14 (17 barras de 560 cm) e φ8 c/12 (45 de 245 cm); 1132 kg de φ32.
+- B1: N1 com 6 φ16 em x e N2 com 4 φ16 em y, todas de 220 cm (o bloco é quadrado), e a malha
+  φ6,3 c/20, 10 + 10 barras de 202 cm; 34,7 kg de φ16 e 9,9 kg de φ6,3.
+- B2 (φ32 adotado): 22 φ32 de 595 cm nas linhas em x, 16 φ32 de 295 cm nas linhas em y, malha
+  φ16 c/14 (17 barras de 560 cm) e φ8 c/12 (45 de 245 cm); 1124 kg de φ32.
 - B7: as diagonais cruzam o bloco de canto a canto e as barras da faixa, deslocadas da linha
-  das estacas, têm comprimentos diferentes (de 569 a 608 cm). Elas entram numa só posição com
-  comprimento variável ("C = var.", média na tabela).
+  das estacas, têm comprimentos diferentes (de 555 a 609 cm, 30 φ16). Elas entram numa só
+  posição com comprimento variável ("C = var.", média na tabela).
 - Em planta, as barras dos tirantes em x, em y e nas diagonais se cruzam sobre as estacas. O
   desenho as põe em camadas (x por baixo, depois y, depois diagonais), e o eixo das camadas de
   cima fica φ acima do `d′` da D8, que o modelo usa igual para todas. A diferença na altura útil fica abaixo de
@@ -549,7 +549,7 @@ forma e a treliça (ADR-008), e o resultado não guarda onde cada barra fica.
 | Bloco flexível | Barras de flexão como a malha, em toda a largura | D9, D18 |
 | Posições | Barras com o mesmo φ, a mesma forma e o mesmo comprimento formam uma posição, numerada a partir dos tirantes de maior φ. Barras de uma mesma linha com comprimentos diferentes formam uma posição de comprimento variável | Prática de projeto |
 | Camadas | Tirantes e malha em x na 1ª camada, em y na 2ª e diagonais na 3ª, cada uma φ acima da anterior | Prática de projeto |
-| Desenhos | Planta da armação inferior com todas as barras e o chamado de cada posição ("11 N1 φ32 C=598"); cortes pela primeira linha de estacas em x e em y, com as barras paralelas em elevação (ganchos) e as cruzadas em seção | ADR-008 |
+| Desenhos | Planta da armação inferior com todas as barras e o chamado de cada posição ("N1: 22 φ32 C=595"); cortes pela primeira linha de estacas em x e em y, com as barras paralelas em elevação (ganchos) e as cruzadas em seção | ADR-008 |
 | Tabela de aço | Posição, φ, quantidade, comprimento unitário e total; resumo por φ com comprimento e massa (7 850 kg/m³, 8.3.3), sem perdas | 8.3.3 |
 | Avisos | Barra mais longa que 12 m (comprimento comercial usual): aviso de emenda, sem calcular o traspasse. Suspensão e armadura lateral (D11) não são desenhadas | Prática de projeto; D11 |
 | Saída | O resultado ganha a lista de posições com as linhas de cada barra em planta (ADR-010), salva no `.bloco`; memorial e tela desenham a partir dela | ADR-010 |
