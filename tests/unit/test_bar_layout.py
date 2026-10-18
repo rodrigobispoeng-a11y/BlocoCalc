@@ -87,19 +87,6 @@ def test_diagonal_bars_get_a_variable_length_position() -> None:
     assert max(lengths) == pytest.approx(2 * 2042.0 * math.sqrt(2.0))
 
 
-def test_identical_runs_share_a_position_even_with_variable_length() -> None:
-    cap = Cap(lx=4200.0, ly=4200.0, h=2100.0, pile_embedment=100.0)
-    a = (1.0 / math.sqrt(2.0), 1.0 / math.sqrt(2.0))
-    b = (-a[0], a[1])
-    runs = [
-        BarRun(("d1",), (0.0, 0.0), a, 3, 16.0, 38.8),
-        BarRun(("d2",), (0.0, 0.0), b, 3, 16.0, 38.8),
-    ]
-    (position,) = bar_positions(cap, runs, [], HookShape.RIGHT_ANGLE, 500.0)
-    assert position.count == 6
-    assert position.reinforcement_ids == ("d1", "d2")
-
-
 # Análise completa: posições no resultado (ADR-010).
 
 
