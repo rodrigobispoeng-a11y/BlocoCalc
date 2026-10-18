@@ -9,12 +9,15 @@ import pytest
 
 from blococalc.analysis import analyze, strut_tie_layout
 from blococalc.report.drawings import (
+    MESH_COLOR,
     STRUT_COLOR,
     TIE_COLOR,
     form_plan,
     form_section,
     model_plan,
     model_section,
+    reinforcement_plan,
+    reinforcement_section,
 )
 from blococalc.schemas import (
     ColumnLoad,
@@ -102,3 +105,45 @@ def test_model_section_draws_each_projection_once_with_lever_arm() -> None:
     top = max(n.z for n in layout.nodes)
     bottom = min(n.z for n in layout.nodes)
     assert f"{(top - bottom) / 10:.1f}".removesuffix(".0") in texts(svg)
+
+
+# Armação (D19, §4.10).
+
+
+def lines(svg: str) -> list[ET.Element]:
+    return list(ET.fromstring(svg).iter(f"{SVG}line"))
+
+
+def test_reinforcement_plan_draws_every_bar_and_calls_each_position() -> None:
+    project, _ = b1()
+    positions = project.result.bar_positions  # type: ignore[union-attr]
+    svg = reinforcement_plan(project.geometry, positions)
+    bars = [e for e in lines(svg) if e.get("stroke") in (TIE_COLOR, MESH_COLOR)]
+    assert len(bars) == sum(p.count for p in positions)
+    labels = texts(svg)
+    assert "N1: 6 φ16 C=220" in labels
+    assert "N3: 10 φ6,3 C=202" in labels
+
+
+def test_variable_length_is_called_var() -> None:
+    geometry = quincunx_cap()
+    loads = LoadsInput(
+        cases=(LoadCase(id="C1", column_loads=(ColumnLoad(column_id="P1", n=8000e3),)),)
+    )
+    result = analyze(geometry, MaterialsInput(fck=25.0), loads, DetailingInput())
+    labels = texts(reinforcement_plan(geometry, result.bar_positions))
+    assert any(label.endswith("C=var.") for label in labels)
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_reinforcement_section_shows_hooks_and_crossing_bars(axis: str) -> None:
+    project, _ = b1()
+    positions = project.result.bar_positions  # type: ignore[union-attr]
+    svg = reinforcement_section(project.geometry, positions, axis)  # type: ignore[arg-type]
+    # Corte pela primeira linha de estacas: a posição paralela aparece com os dois ganchos
+    # (polilinha) e as barras que cruzam o corte, como pontos.
+    assert len(ET.fromstring(svg).findall(f"{SVG}polyline")) >= 1
+    dots = [c for c in ET.fromstring(svg).iter(f"{SVG}circle") if c.get("fill") != "none"]
+    assert dots
+    parallel = "N1" if axis == "x" else "N2"
+    assert parallel in texts(svg)

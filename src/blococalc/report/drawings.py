@@ -14,16 +14,22 @@ from html import escape
 from typing import Literal
 
 from blococalc.schemas import (
+    BarPosition,
     GeometryInput,
+    HookShape,
     LayoutMemberKind,
     PileReaction,
     PileShape,
+    Point,
     StrutTieLayout,
 )
 
 Axis = Literal["x", "y"]
 STRUT_COLOR = "#c0392b"
 TIE_COLOR = "#1f4e9c"
+MESH_COLOR = "#4f7f3a"
+_HOOK_TAIL = 8.0  # φ (D19)
+_CHAR_WIDTH = 0.6  # largura média de um caractere, em altura de fonte (sans-serif)
 _LINE = "#000000"
 _LIGHT = "#9a9a9a"
 _SECTION_TEXT = 0.07  # cortes saem menores na página que as plantas
@@ -78,7 +84,9 @@ class _Sheet:
         vertical: bool = False,
     ) -> None:  # fmt: skip
         size = self.text_size * scale
-        self.points += [(u - size, v - size), (u + size, v + size)]
+        half = max(size, _CHAR_WIDTH * size * len(label) / 2)
+        reach = (size, half) if vertical else (half, size)
+        self.points += [(u - reach[0], v - reach[1]), (u + reach[0], v + reach[1])]
         turn = f' transform="rotate(-90 {u:.1f} {-v:.1f})"' if vertical else ""
         # Linha de base abaixo do centro: o renderizador da Qt ignora dominant-baseline.
         self.items.append(
@@ -223,6 +231,109 @@ def model_section(geometry: GeometryInput, layout: StrutTieLayout, axis: Axis) -
     gap = 2.5 * sheet.text_size
     sheet.dimension(min(heights), max(heights), length / 2 + gap, horizontal=False)
     return sheet.render()
+
+
+def reinforcement_plan(geometry: GeometryInput, positions: Sequence[BarPosition]) -> str:
+    """Armação inferior em planta: todas as barras e o chamado de cada posição (D19)."""
+    cap = geometry.cap
+    sheet = _Sheet(max(cap.lx, cap.ly))
+    sheet.rect(-cap.lx / 2, -cap.ly / 2, cap.lx, cap.ly)
+    _piles_and_columns(sheet, geometry, _LIGHT, labels=False)
+    for position in positions:
+        color = _color(position)
+        for a, b in position.bars:
+            sheet.line(a, b, color, width=1.0 if color == TIE_COLOR else 0.6)
+    # Etiqueta de cada posição numa fração diferente do comprimento da barra, para não se
+    # sobreporem; os chamados completos ficam na legenda abaixo da planta.
+    for k, position in enumerate(positions):
+        a, b = position.bars[0]
+        t = (k + 0.5) / len(positions)
+        _tag(sheet, (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])), position)
+    for k, position in enumerate(positions):
+        v = -cap.ly / 2 - (2.0 + 1.3 * k) * sheet.text_size
+        sheet.text(0.0, v, call_out(position), _color(position), 0.85)
+    return sheet.render()
+
+
+def reinforcement_section(
+    geometry: GeometryInput, positions: Sequence[BarPosition], axis: Axis
+) -> str:
+    """Corte pela primeira linha de estacas na direção `axis`: barras paralelas em elevação, com
+    os ganchos, e as que cruzam o corte em seção (D19)."""
+    cap = geometry.cap
+    across = 1 if axis == "x" else 0  # coordenada constante no plano do corte
+    at = min(p.y if axis == "x" else p.x for p in geometry.piles)
+    reach = max(p.size for p in geometry.piles) / 2
+    length = cap.lx if axis == "x" else cap.ly
+    sheet = _Sheet(max(length, 1.6 * cap.h), _SECTION_TEXT)
+    sheet.rect(-length / 2, 0.0, length, cap.h, _LIGHT)
+    for u, size in _projected(((p.x, p.y, p.size) for p in geometry.piles), axis):
+        sheet.rect(u - size / 2, -0.3 * cap.h, size, 0.3 * cap.h + cap.pile_embedment, _LIGHT)
+    heights = _layer_heights(geometry, positions)
+    for k, position in enumerate(positions):
+        z = heights[position.layer] + position.bar_diameter / 2
+        color = _color(position)
+        near = [b for b in position.bars if _parallel(b, across)]
+        near = [b for b in near if abs(b[0][across] - at) <= reach]
+        if near:
+            a, b = min(near, key=lambda bar: abs(bar[0][across] - at))
+            u0, u1 = sorted((a[1 - across], b[1 - across]))
+            leg = (
+                _HOOK_TAIL * position.bar_diameter if position.hook is HookShape.RIGHT_ANGLE else 0
+            )
+            sheet.polyline([(u0, z + leg), (u0, z), (u1, z), (u1, z + leg)], color)
+            t = (k + 0.5) / len(positions)
+            sheet.text(u0 + t * (u1 - u0), z + 1.2 * sheet.text_size, position.id, color, 0.85)
+            continue
+        for a, b in position.bars:
+            if (a[across] - at) * (b[across] - at) < 0:
+                t = (at - a[across]) / (b[across] - a[across])
+                u = a[1 - across] + t * (b[1 - across] - a[1 - across])
+                sheet.items.append(
+                    f'<circle cx="{u:.1f}" cy="{-z:.1f}" r="{position.bar_diameter / 2:.1f}" '
+                    f'fill="{color}" stroke="none"/>'
+                )
+    return sheet.render()
+
+
+def call_out(position: BarPosition) -> str:
+    """Chamado da posição: "N1: 6 φ16 C=220" (comprimento em cm, "var." se variável)."""
+    phi = f"{position.bar_diameter:g}".replace(".", ",")
+    length = "var." if position.variable_length else _cm(position.length)
+    return f"{position.id}: {position.count} φ{phi} C={length}"
+
+
+def _tag(sheet: _Sheet, at: Point, position: BarPosition) -> None:
+    """Número da posição sobre um fundo branco, legível no meio das barras."""
+    size = 0.85 * sheet.text_size
+    width = _CHAR_WIDTH * size * len(position.id) + 0.4 * size
+    sheet.items.append(
+        f'<rect x="{at[0] - width / 2:.1f}" y="{-at[1] - 0.6 * size:.1f}" width="{width:.1f}" '
+        f'height="{1.2 * size:.1f}" fill="#ffffff" stroke="none"/>'
+    )
+    sheet.text(at[0], at[1], position.id, _color(position), 0.85)
+
+
+def _color(position: BarPosition) -> str:
+    return TIE_COLOR if _is_tie(position) else MESH_COLOR
+
+
+def _is_tie(position: BarPosition) -> bool:
+    return any(i.startswith("tirante_") for i in position.reinforcement_ids)
+
+
+def _parallel(bar: tuple[tuple[float, float], tuple[float, float]], across: int) -> bool:
+    return abs(bar[0][across] - bar[1][across]) < 1.0
+
+
+def _layer_heights(geometry: GeometryInput, positions: Sequence[BarPosition]) -> dict[int, float]:
+    """Face inferior de cada camada: cobrimento sobre a estaca e a camada de baixo (D19)."""
+    thickest = {
+        layer: max((p.bar_diameter for p in positions if p.layer == layer), default=0.0)
+        for layer in (1, 2, 3)
+    }
+    base = geometry.cap.pile_embedment + geometry.cap.cover
+    return {1: base, 2: base + thickest[1], 3: base + thickest[1] + thickest[2]}
 
 
 def _piles_and_columns(
