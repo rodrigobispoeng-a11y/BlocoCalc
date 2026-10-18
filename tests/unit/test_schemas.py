@@ -8,10 +8,12 @@ from pydantic import ValidationError
 from blococalc.schemas import (
     AggressivenessClass,
     AnalysisResult,
+    BarPosition,
     Cap,
     ColumnLoad,
     DetailingInput,
     GeometryInput,
+    HookShape,
     LoadCase,
     LoadsInput,
     MaterialsInput,
@@ -75,14 +77,14 @@ def test_defaults_follow_approved_decisions() -> None:
     assert (materials.gamma_c, materials.gamma_s, materials.fyk) == (1.4, 1.15, 500.0)
 
 
-@pytest.mark.parametrize("old", ["1", "2", "3", "4", "5"])
-def test_older_documents_are_read_as_v6(old: str) -> None:
+@pytest.mark.parametrize("old", ["1", "2", "3", "4", "5", "6"])
+def test_older_documents_are_read_as_v7(old: str) -> None:
     data = four_pile_cap().model_dump(mode="json")
     data["schema_version"] = old
     for pile in data["piles"]:
         del pile["axial_stiffness"]
     geometry = GeometryInput.model_validate(data)
-    assert geometry.schema_version == "6"
+    assert geometry.schema_version == "7"
     assert all(p.axial_stiffness is None for p in geometry.piles)
     detailing = DetailingInput.model_validate({"schema_version": old, "bar_diameter": 20.0})
     assert detailing.max_aggregate_size == 19.0
@@ -94,6 +96,7 @@ def test_older_documents_are_read_as_v6(old: str) -> None:
         "audit": {"app_version": "0.1.0", "method": "m", "input_hash": "x"},
     }
     assert AnalysisResult.model_validate(v1_result).reinforcement == ()
+    assert AnalysisResult.model_validate(v1_result).bar_positions == ()
 
 
 def test_reinforcement_bars_are_optional() -> None:
@@ -118,7 +121,7 @@ def test_reinforcement_bars_are_optional() -> None:
 
 def test_unknown_schema_version_is_rejected() -> None:
     data = four_pile_cap().model_dump(mode="json")
-    data["schema_version"] = "7"
+    data["schema_version"] = "8"
     with pytest.raises(ValidationError):
         GeometryInput.model_validate(data)
 
@@ -151,3 +154,23 @@ def test_pile_stiffness_is_optional_and_positive() -> None:
     for invalid in (0.0, -1.0):
         with pytest.raises(ValidationError):
             Pile(id="E1", x=0.0, y=0.0, size=400.0, axial_stiffness=invalid)
+
+
+def test_bar_position_contract() -> None:
+    # ADR-010: posição de armação com as extremidades de cada barra em planta.
+    position = BarPosition(
+        id="N1",
+        bar_diameter=16.0,
+        count=2,
+        length=2220.0,
+        hook=HookShape.RIGHT_ANGLE,
+        layer=1,
+        reinforcement_ids=("tirante_E1_E2",),
+        bars=(((-950.0, -600.0), (950.0, -600.0)), ((-950.0, -561.2), (950.0, -561.2))),
+    )
+    assert not position.variable_length
+    assert BarPosition.model_validate(position.model_dump()) == position
+    with pytest.raises(ValidationError, match="count"):
+        position.model_validate({**position.model_dump(), "count": 3})
+    with pytest.raises(ValidationError):
+        BarPosition.model_validate({**position.model_dump(), "layer": 0})
