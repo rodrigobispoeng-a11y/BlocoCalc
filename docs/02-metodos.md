@@ -561,7 +561,7 @@ forma e a treliça (ADR-008), e o resultado não guarda onde cada barra fica.
   alguns escritórios para amarrar a armadura superior; mais aço).
 - (C) Gancho semicircular com ponta de 2φ (o menor permitido pela 9.4.2.3).
 
-## 4.11 Altura útil por camada (especificação, D20 proposta)
+## 4.11 Altura útil por camada (especificação, D20 aprovada)
 
 Objetivo: o M5 usar, para cada tirante, a altura útil da camada em que as barras ficam no
 desenho (D19), em vez do `d′` da camada inferior (D8) para todos. O bloco flexível já faz isso
@@ -643,7 +643,7 @@ são registradas, nunca copiadas às cegas (ver B1).
 | D17 | Fileiras desencontradas: isoáreas do pilar proporcionais às reações e deslocadas da excentricidade, tirantes na triangulação das estacas pelo mínimo de `Σ F·l` (critério da D12) e, entre os ótimos, o de menor `Σ F²` (§4.8) | Aprovada (Rodrigo, 17/10/2026) |
 | D18 | Escolha de barras: quantidade pelo φ do usuário, uma camada na faixa 1,2·φ com espaçamento da 18.3.2.2, ancoragem com a área efetiva, malha com φ mínimo e espaçamento entre 100 mm e o máximo da 20.1 (§4.9) | Aprovada (Rodrigo, 18/10/2026); opção (B) para tirante que não cabe escolhida em 17/10/2026 |
 | D19 | Desenho de armação: barras dos tirantes na faixa de face a face com gancho, malha em toda a largura, posições numeradas com comprimento pela linha de centro, camadas x, y e diagonais, tabela de aço com 7 850 kg/m³ (§4.10) | Aprovada (Rodrigo, 18/10/2026); gancho a 90° com 8φ escolhido por Rodrigo em 18/10/2026 |
-| D20 | Altura útil por camada: cada tirante com o `d′` da sua camada da D19 (`c + φ/2 + (k − 1)·φ`), bielas e nó do pilar pelo modelo da camada mais alta, nó da estaca pela 1ª camada (§4.11) | Proposta (Claude, 18/10/2026); opção (A), por camada, escolhida por Rodrigo em 18/10/2026 |
+| D20 | Altura útil por camada: cada tirante com o `d′` da sua camada da D19 (`c + φ/2 + (k − 1)·φ`), bielas e nó do pilar pelo modelo da camada mais alta, nó da estaca pela 1ª camada (§4.11) | Aprovada (Rodrigo, 18/10/2026), com o nó da estaca pela camada mais alta mesmo reprovando o B2; opção (A), por camada, escolhida por Rodrigo em 18/10/2026 |
 
 ## 7. Ainda falta neste documento
 
