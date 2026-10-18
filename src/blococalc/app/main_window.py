@@ -52,7 +52,7 @@ from PySide6.QtWidgets import (
 from blococalc.analysis import analyze, fem_verification, refresh_project, strut_tie_layout
 from blococalc.app.view3d import View3D
 from blococalc.persistence.project import EXTENSION, ProjectFileError, load_project, save_project
-from blococalc.report import calculation_report
+from blococalc.report import bar_label, calculation_report
 from blococalc.schemas import (
     AggressivenessClass,
     AnalysisResult,
@@ -187,6 +187,7 @@ class MainWindow(QMainWindow):
         self.loads = _table(_LOAD_HEADERS, [("ELU1", "P1", 980.0, 0.0, 0.0, 0.0, 0.0, "normal")])
         self.gamma_n = _spin(1.2, 2.0, decimals=2, minimum=1.0)
         self.bar_diameter = _spin(16.0, 40.0)
+        self.max_aggregate = _spin(19.0, 50.0, minimum=4.8)
         self.aggressiveness = QComboBox()
         self.aggressiveness.addItems([c.value for c in AggressivenessClass])
         self.aggressiveness.setCurrentText(AggressivenessClass.II.value)
@@ -247,6 +248,7 @@ class MainWindow(QMainWindow):
         detailing_layout = QFormLayout(detailing)
         detailing_layout.addRow("γn", self.gamma_n)
         detailing_layout.addRow("φ dos tirantes [mm]", self.bar_diameter)
+        detailing_layout.addRow("Agregado graúdo máx. [mm]", self.max_aggregate)
         detailing_layout.addRow("Classe de agressividade", self.aggressiveness)
         detailing_layout.addRow(self.hooked)
         detailing_layout.addRow(self.self_weight)
@@ -349,6 +351,7 @@ class MainWindow(QMainWindow):
             bar_diameter=self.bar_diameter.value(),
             aggressiveness_class=AggressivenessClass(self.aggressiveness.currentText()),
             hooked=self.hooked.isChecked(),
+            max_aggregate_size=self.max_aggregate.value(),
         )
         return (
             geometry,
@@ -407,9 +410,10 @@ class MainWindow(QMainWindow):
         )
         _fill(
             self.reinforcement_table,
-            ("Armadura", "Tipo", "As [cm²]", "φ [mm]", "Item"),
+            ("Armadura", "Tipo", "As [cm²]", "Barras", "As,ef [cm²]", "Item"),
             [
-                (r.id, r.kind.value, f"{r.area_required / 100:.2f}", f"{r.bar_diameter:.0f}",
+                (r.id, r.kind.value, f"{r.area_required / 100:.2f}", bar_label(r),
+                 "" if r.area_provided is None else f"{r.area_provided / 100:.2f}",
                  r.reference.item)
                 for r in result.reinforcement
             ],
@@ -437,7 +441,13 @@ class MainWindow(QMainWindow):
             menu.addAction(action)
 
     def _watch_changes(self) -> None:
-        spins = (*self.cap.values(), *self.materials.values(), self.gamma_n, self.bar_diameter)
+        spins = (
+            *self.cap.values(),
+            *self.materials.values(),
+            self.gamma_n,
+            self.bar_diameter,
+            self.max_aggregate,
+        )
         for box in spins:
             box.valueChanged.connect(self._inputs_changed)
         self.aggressiveness.currentTextChanged.connect(self._inputs_changed)
@@ -496,6 +506,7 @@ class MainWindow(QMainWindow):
                 box.setValue(getattr(project.materials, name))
             self.gamma_n.setValue(project.loads.gamma_n)
             self.bar_diameter.setValue(project.detailing.bar_diameter)
+            self.max_aggregate.setValue(project.detailing.max_aggregate_size)
             self.aggressiveness.setCurrentText(project.detailing.aggressiveness_class.value)
             self.hooked.setChecked(project.detailing.hooked)
             self.self_weight.setChecked(project.loads.include_cap_self_weight)

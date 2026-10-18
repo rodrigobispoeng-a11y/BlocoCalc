@@ -9,7 +9,7 @@ from datetime import date
 import pytest
 
 from blococalc.analysis import analyze, strut_tie_layout
-from blococalc.report import calculation_report
+from blococalc.report import bar_label, calculation_report
 from blococalc.schemas import (
     AnalysisResult,
     CheckStatus,
@@ -122,3 +122,19 @@ def test_report_without_drawings() -> None:
     html = calculation_report(project(), ISSUED, drawings=False)
     assert "<img" not in html
     assert "Forma (cotas em cm)" not in html
+
+
+def test_report_lists_the_chosen_bars() -> None:
+    # D18: quantidade e diâmetro dos tirantes, φ e espaçamento da malha, e o agregado.
+    html = calculation_report(project(), ISSUED)
+    assert "3 φ16" in html and "φ6,3 c/20" in html
+    assert "As,ef [cm²]" in html and "6.03" in html
+    assert "agregado graúdo de 19 mm" in html
+
+
+def test_bar_label() -> None:
+    tie = project().result.reinforcement[0]  # type: ignore[union-attr]
+    assert bar_label(tie.model_copy(update={"bar_count": 11, "bar_diameter": 32.0})) == "11 φ32"
+    mesh = tie.model_copy(update={"bar_count": None, "spacing": 150.0, "bar_diameter": 12.5})
+    assert bar_label(mesh) == "φ12,5 c/15"
+    assert bar_label(tie.model_copy(update={"bar_count": None})) == "φ16"

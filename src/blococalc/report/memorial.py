@@ -15,7 +15,14 @@ from datetime import date
 from html import escape
 
 from blococalc.report.drawings import form_plan, form_section, model_plan, model_section
-from blococalc.schemas import AnalysisResult, Check, CheckStatus, Project, StrutTieLayout
+from blococalc.schemas import (
+    AnalysisResult,
+    Check,
+    CheckStatus,
+    Project,
+    Reinforcement,
+    StrutTieLayout,
+)
 
 KN = 1e3  # N
 KNM = 1e6  # N·mm
@@ -155,7 +162,8 @@ def _inputs(project: Project, drawings: bool) -> list[str]:
         ),
         _paragraph(
             f"Tirantes φ {_n(d.bar_diameter)} mm, classe de agressividade "
-            f"{d.aggressiveness_class.value}, {'com' if d.hooked else 'sem'} ganchos nas pontas."
+            f"{d.aggressiveness_class.value}, {'com' if d.hooked else 'sem'} ganchos nas pontas, "
+            f"agregado graúdo de {d.max_aggregate_size:g} mm (D18)."
         ),
     ]
 
@@ -187,14 +195,23 @@ def _results(result: AnalysisResult, first: int | None) -> list[str]:
         parts += [
             title(2, "Armaduras"),
             _table(
-                ("Armadura", "Tipo", "Fd [kN]", "As,nec [cm²]", "φ [mm]", "Referência"),
+                (
+                    "Armadura",
+                    "Tipo",
+                    "Fd [kN]",
+                    "As,nec [cm²]",
+                    "Barras",
+                    "As,ef [cm²]",
+                    "Referência",
+                ),
                 [
                     (
                         r.id,
                         r.kind.value,
                         _n(r.force_d / KN, 1),
                         _n(r.area_required / 100, 2),
-                        _n(r.bar_diameter),
+                        bar_label(r),
+                        "" if r.area_provided is None else _n(r.area_provided / 100, 2),
                         f"{r.reference.source}, {r.reference.item}",
                     )
                     for r in result.reinforcement
@@ -290,6 +307,16 @@ def _paragraph(text: str) -> str:
 
 def _list(items: Iterable[str]) -> str:
     return "<ul>" + "".join(f"<li>{escape(i)}</li>" for i in items) + "</ul>"
+
+
+def bar_label(item: Reinforcement) -> str:
+    """Barras escolhidas (D18): "11 φ32" no tirante, "φ12,5 c/15" na malha, só "φ16" sem barras."""
+    phi = f"φ{item.bar_diameter:g}".replace(".", ",")
+    if item.bar_count is not None:
+        return f"{item.bar_count} {phi}"
+    if item.spacing is not None:
+        return f"{phi} c/{item.spacing / 10:g}".replace(".", ",")
+    return phi
 
 
 def _n(value: float, decimals: int = 1) -> str:
