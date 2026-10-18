@@ -85,7 +85,7 @@ def rigid_cap_detailing(
     piles = {pile.id: pile for pile in geometry.piles}
     bar_diameter = options.bar_diameter
     fyd = materials.fyk / materials.gamma_s
-    runs = _bar_runs(ties)
+    runs = bar_runs(ties)
     # Cada linha de barras (trechos alinhados de uma linha de estacas, D13) entra com o seu
     # trecho mais carregado, que define a armadura da linha inteira.
     tension_x = sum(max(abs(t.force_d * t.dir_x) for t in run) for run in runs)
@@ -185,7 +185,7 @@ def rigid_cap_detailing(
     )
 
 
-def _bar_runs(ties: Sequence[TieResult]) -> list[list[TieResult]]:
+def bar_runs(ties: Sequence[TieResult]) -> list[list[TieResult]]:
     """Agrupa os trechos paralelos que se encadeiam por estacas comuns numa mesma linha."""
     runs: list[list[TieResult]] = []
     for tie in ties:

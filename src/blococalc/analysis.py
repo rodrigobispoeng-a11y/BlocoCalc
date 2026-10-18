@@ -31,16 +31,24 @@ from blococalc import __version__
 from blococalc.core.cap_truss import cap_truss
 from blococalc.core.flexible_cap import face_shears, punching_load, s1_moments
 from blococalc.core.reactions import rigid_cap_reactions
-from blococalc.core.strut_tie import EQUILIBRIUM_WARNING_RATIO, StrutTieModel, santos_stucchi
+from blococalc.core.strut_tie import (
+    EQUILIBRIUM_WARNING_RATIO,
+    StrutTieModel,
+    Tie,
+    santos_stucchi,
+)
+from blococalc.geometry.bar_layout import BarRun, MeshBars, bar_positions
 from blococalc.geometry.fictitious_column import fictitious_column
 from blococalc.schemas import (
     AnalysisResult,
     AuditTrail,
+    BarPosition,
     Cap,
     Check,
     CheckStatus,
     DetailingInput,
     GeometryInput,
+    HookShape,
     LayoutMember,
     LayoutMemberKind,
     LayoutNode,
@@ -59,10 +67,11 @@ from blococalc.standards.bars import (
     BAR_SERIES,
     MIN_MESH_SPACING,
     bar_area,
+    clear_spacing,
     mesh_bars,
     mesh_spacing,
 )
-from blococalc.standards.detailing import rigid_cap_detailing
+from blococalc.standards.detailing import bar_runs, rigid_cap_detailing
 from blococalc.standards.durability import cover_check
 from blococalc.standards.flexure import design_section
 from blococalc.standards.rigidity import rigidity_checks
@@ -143,6 +152,11 @@ _FEM_SPRING_ASSUMPTION = (
 _MIXED_SUPPORTS_WARNING = (
     "Estacas com e sem rigidez no MEF (D16): as sem rigidez ficam como apoio rígido e tendem a "
     "concentrar carga."
+)
+_COMMERCIAL_BAR = 12000.0  # mm, comprimento comercial usual (D19)
+_SPLICE_WARNING = (
+    "Há barras com mais de 12 m (comprimento comercial usual): prever emendas; o traspasse não é "
+    "calculado pelo programa (D19)."
 )
 _CORNER_PILES_WARNING = (
     "Bloco flexível: punção e cisalhamento junto às estacas de canto e de borda não são "
@@ -237,6 +251,7 @@ def _analyze_with(
     reactions: list[PileReaction] = []
     envelope: dict[str, Reinforcement] = {}
     corrections: dict[str, float] = {}  # D17: um por caso com fileiras desencontradas
+    ties: dict[tuple[str, str], Tie] = {}  # D19: tirantes de todos os casos, para as posições
 
     for case in loads.cases:
         self_weight = (
@@ -257,6 +272,7 @@ def _analyze_with(
         model_geometry, _ = _model_inputs(geometry, case)
         model = santos_stucchi(model_geometry, case_reactions, strengths, loads.gamma_n, tie_height)
         result = rigid_cap_detailing(model_geometry, model.ties, materials, options, tie_height)
+        ties |= {(t.pile_a, t.pile_b): t for t in model.ties if (t.pile_a, t.pile_b) not in ties}
         checks += _tag(case.id, (*strut_tie_checks(model, strengths), *result.checks))
         if multiple:
             normals = {load.column_id: load.n for load in case.column_loads}
@@ -307,19 +323,17 @@ def _analyze_with(
         _merge(envelope, items)
 
     if not rigid:
-        warnings.insert(
-            0,
-            "Bloco flexível pela NBR 6118:2023, 22.7.1 (h < (a − ap)/3): dimensionado como laje "
-            "sobre estacas (D9), não por bielas e tirantes.",
-        )
-        warnings.append(_CORNER_PILES_WARNING)
+        _flexible_warnings(warnings)
     reinforcement = [_with_mesh_bars(r, geometry.cap) for r in envelope.values()]
+    positions = _bar_positions(geometry, materials, options, reinforcement, list(ties.values()))
+    warnings += [_SPLICE_WARNING] if any(p.length > _COMMERCIAL_BAR for p in positions) else []
     reinforcement += _flagged(warnings, options.bar_diameter)
     return AnalysisResult(
         rigid=rigid,
         reactions=tuple(reactions),
         checks=tuple(checks),
         reinforcement=tuple(reinforcement),
+        bar_positions=positions,
         warnings=tuple(warnings),
         audit=AuditTrail(
             app_version=__version__,
@@ -344,6 +358,53 @@ def _analyze_with(
             input_hash=_input_hash(geometry, materials, loads, options),
         ),
     )
+
+
+def _flexible_warnings(warnings: list[str]) -> None:
+    """Bloco flexível (D9): aviso do método no início e das estacas de canto no fim."""
+    warnings.insert(
+        0,
+        "Bloco flexível pela NBR 6118:2023, 22.7.1 (h < (a − ap)/3): dimensionado como laje "
+        "sobre estacas (D9), não por bielas e tirantes.",
+    )
+    warnings.append(_CORNER_PILES_WARNING)
+
+
+def _bar_positions(
+    geometry: GeometryInput,
+    materials: MaterialsInput,
+    options: DetailingInput,
+    reinforcement: Sequence[Reinforcement],
+    ties: Sequence[Tie],
+) -> tuple[BarPosition, ...]:
+    """Posições de armação (D19, ADR-010): linhas de barras dos tirantes e malhas."""
+    items = {r.id: r for r in reinforcement}
+    piles = {p.id: p for p in geometry.piles}
+    runs = []
+    for run in bar_runs(ties):
+        ids = tuple(f"tirante_{t.pile_a}_{t.pile_b}" for t in run)
+        tie_items = [items[i] for i in ids if items[i].bar_count]
+        if not tie_items:
+            continue
+        phi = tie_items[0].bar_diameter
+        start = piles[run[0].pile_a]
+        runs.append(
+            BarRun(
+                reinforcement_ids=ids,
+                origin=(start.x, start.y),
+                direction=(run[0].dir_x, run[0].dir_y),
+                count=max(r.bar_count or 0 for r in tie_items),
+                bar_diameter=phi,
+                spacing=phi + clear_spacing(phi, options.max_aggregate_size),
+            )
+        )
+    meshes = [
+        MeshBars(r.id, r.direction, r.bar_diameter, r.spacing)
+        for r in reinforcement
+        if r.spacing is not None
+    ]
+    hook = HookShape.RIGHT_ANGLE if options.hooked else HookShape.NONE
+    return bar_positions(geometry.cap, runs, meshes, hook, materials.fyk)
 
 
 def _with_mesh_bars(item: Reinforcement, cap: Cap) -> Reinforcement:
