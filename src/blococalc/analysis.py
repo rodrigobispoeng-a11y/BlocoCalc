@@ -69,7 +69,7 @@ METHOD = "santos-stucchi-2019"
 FLEXIBLE_METHOD = "ceb70-nbr6118-flexao"  # ADR-003
 SECONDARY_RATIO = 0.20  # CEB-70 §3.2: armadura transversal ≥ 1/5 da principal
 SELF_WEIGHT_RATIO = 0.05  # D7
-_HASH_FORMAT = "4"  # ADR-007: formato do hash das entradas, igual ao da v4
+_HASH_FORMAT = "6"  # ADR-007 e ADR-009: formato do hash das entradas
 _M7_TOLERANCE = 0.01  # diferença numérica aceita no confronto D10 × M7
 
 _TIE_REF = Reference(source="NBR 6118:2023", item="22.3.3 / 22.7.4.1.1")
@@ -804,7 +804,8 @@ def _input_hash(*inputs: GeometryInput | MaterialsInput | LoadsInput | Detailing
     """SHA-256 das entradas sem os campos vazios e com a versão fixa do formato do hash.
 
     ADR-007: campos novos e opcionais (como a rigidez das estacas) e a troca da versão do
-    contrato não invalidam os resultados salvos de entradas que não os usam.
+    contrato não invalidam os resultados salvos de entradas que não os usam. ADR-009: o formato
+    passou a "6" para os resultados salvos sem barras ficarem desatualizados.
     """
     digest = hashlib.sha256()
     for item in inputs:
