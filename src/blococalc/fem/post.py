@@ -45,7 +45,7 @@ def minimum_principal(stresses: FloatArray) -> FloatArray:
         ],
         axis=1,
     )
-    sigma3: FloatArray = np.linalg.eigvalsh(tensors)[:, 0]
+    sigma3: FloatArray = np.asarray(np.linalg.eigvalsh(tensors)[:, 0], dtype=np.float64)
     return sigma3
 
 
