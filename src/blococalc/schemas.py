@@ -1,4 +1,5 @@
-"""Contratos de dados entre módulos (schemas v5: ADR-002 a 004 e 007; layout 3D, ADR-006).
+"""Contratos de dados entre módulos (schemas v5: ADR-002 a 004 e 007; layout 3D, ADR-006;
+campo do MEF, ADR-012).
 
 Unidades internas fixas: N, mm, MPa. Conversões acontecem só nas bordas (UI e importação).
 Estes modelos são o único formato que atravessa a fronteira entre subpacotes. Mudanças
@@ -335,6 +336,41 @@ class StrutTieLayout(_Contract):
     case_id: str
     nodes: tuple[LayoutNode, ...]
     members: tuple[LayoutMember, ...]
+
+
+class FemField(_Contract):
+    """Malha C3D10, deslocamentos e σ3 nos nós do MEF de um caso, para desenho (ADR-012).
+
+    Tuplas planas: `nodes` e `displacements` com 3 valores por nó [mm], `tetrahedra` com 10
+    índices por elemento na ordem do CalculiX (a mesma da célula quadrática do VTK) e `sigma3`
+    com a tensão principal mínima de cada nó [MPa], negativa em compressão. Recalculado pelo
+    MEF; não entra no `.bloco`.
+    """
+
+    case_id: str
+    nodes: tuple[float, ...]
+    tetrahedra: tuple[int, ...]
+    displacements: tuple[float, ...]
+    sigma3: tuple[float, ...]
+
+    @property
+    def node_count(self) -> int:
+        return len(self.nodes) // 3
+
+    @property
+    def element_count(self) -> int:
+        return len(self.tetrahedra) // 10
+
+    @model_validator(mode="after")
+    def _consistent(self) -> FemField:
+        n = self.node_count
+        if len(self.nodes) != 3 * n or len(self.displacements) != 3 * n:
+            raise ValueError("nodes e displacements precisam de 3 valores por nó")
+        if len(self.tetrahedra) % 10 or len(self.sigma3) != n:
+            raise ValueError("tetrahedra precisa de 10 nós por elemento e sigma3 de 1 por nó")
+        if self.tetrahedra and not 0 <= min(self.tetrahedra) <= max(self.tetrahedra) < n:
+            raise ValueError("tetrahedra referencia um nó fora da malha")
+        return self
 
 
 # --------------------------------------------------------------------------------------

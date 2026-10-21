@@ -13,7 +13,12 @@ import pytest
 
 pytest.importorskip("gmsh")
 
-from blococalc.analysis import FEM_METHOD, _fem_tie_checks, fem_verification
+from blococalc.analysis import (
+    FEM_METHOD,
+    _fem_tie_checks,
+    fem_verification,
+    fem_verification_with_fields,
+)
 from blococalc.core.strut_tie import StrutTieModel, Tie
 from blococalc.fem.ccx import find_ccx
 from blococalc.fem.mesh import FloatArray
@@ -162,3 +167,33 @@ def test_b1_matches_prototype() -> None:
         assert low < 1.1 * check.demand / check.capacity < 1.10
     assert checks["mef_no_pilar_P1"].demand == pytest.approx(8.0, abs=0.4)
     assert result.audit.parameters["mesh_size_mm"] == 150.0
+
+
+@pytest.mark.fem
+@needs_ccx
+def test_fields_come_with_the_verification() -> None:
+    # ADR-012: um campo por caso, com a malha C3D10, os deslocamentos e σ3 nos nós.
+    result, fields = fem_verification_with_fields(
+        four_pile_cap(), MaterialsInput(fck=25.0), loads(), mesh_size=300.0
+    )
+    assert result.audit.method == FEM_METHOD
+    (field,) = fields
+    assert field.case_id == "ELU1"
+    assert field.node_count == result.audit.parameters["mesh_nodes"]
+    sigma3 = np.array(field.sigma3)
+    # Compressão sob o pilar e nas bielas; o bloco desce (uz < 0 no topo).
+    assert sigma3.min() < -5.0
+    nodes = np.array(field.nodes).reshape(-1, 3)
+    uz = np.array(field.displacements).reshape(-1, 3)[:, 2]
+    assert uz[nodes[:, 2] == nodes[:, 2].max()].mean() < 0.0
+
+
+def test_flexible_cap_has_no_field() -> None:
+    geometry = four_pile_cap().model_copy(
+        update={"cap": Cap(lx=2000.0, ly=2000.0, h=500.0, pile_embedment=100.0)}
+    )
+    result, fields = fem_verification_with_fields(
+        geometry, MaterialsInput(fck=25.0), loads(), ccx="ccx-inexistente"
+    )
+    assert fields == ()
+    assert not result.rigid

@@ -48,6 +48,7 @@ from blococalc.schemas import (
     Check,
     CheckStatus,
     DetailingInput,
+    FemField,
     GeometryInput,
     HookShape,
     LayoutMember,
@@ -553,6 +554,25 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
     Chamada separada de `analyze()`, sob demanda: exige o extra `fem` (gmsh) e o executável do
     CalculiX (`ccx`, parâmetro, BLOCOCALC_CCX ou PATH). As reações devolvidas são as do MEF.
     """
+    result, _ = fem_verification_with_fields(
+        geometry, materials, loads, detailing, mesh_size=mesh_size, ccx=ccx
+    )
+    return result
+
+
+def fem_verification_with_fields(  # noqa: PLR0913 - mesmas entradas de fem_verification()
+    geometry: GeometryInput,
+    materials: MaterialsInput,
+    loads: LoadsInput,
+    detailing: DetailingInput | None = None,
+    *,
+    mesh_size: float | None = None,
+    ccx: str | None = None,
+) -> tuple[AnalysisResult, tuple[FemField, ...]]:
+    """`fem_verification` e o campo de tensões de cada caso para a aba 3D (ADR-012).
+
+    Bloco flexível não roda o MEF e não tem campo.
+    """
     from blococalc.fem import ccx as solver  # noqa: PLC0415 (extra opcional)
     from blococalc.fem import post  # noqa: PLC0415
     from blococalc.fem.loads import column_nodal_forces  # noqa: PLC0415
@@ -580,6 +600,7 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
     if stiffness and len(stiffness) < len(geometry.piles):
         warnings.append(_MIXED_SUPPORTS_WARNING)
     reactions: list[PileReaction] = []
+    fields: list[FemField] = []
     if not rigid:
         warnings.append(
             "Bloco flexível pela NBR 6118:2023, 22.7.1: o MEF da D14 só confere o M5 de blocos "
@@ -594,6 +615,7 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
             forces = column_nodal_forces(mesh, columns, list(case.column_loads), factor)
             result = solver.solve(mesh, forces, materials.fck, ccx, stiffness)
             field = post.StressField(mesh, result)
+            fields.append(post.fem_field(mesh, result, case.id))
             fem = post.pile_reactions(mesh, result, stiffness)
             reactions += [PileReaction(pile_id=k, case_id=case.id, force=v) for k, v in fem.items()]
             # M1 com a mesma carga do MEF (D7 junto com os pilares) para validar o modelo.
@@ -617,7 +639,7 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
                 for c in case_checks
                 if c.status is not CheckStatus.OK
             ]
-    return AnalysisResult(
+    verification = AnalysisResult(
         rigid=rigid,
         reactions=tuple(reactions),
         checks=tuple(checks),
@@ -630,6 +652,7 @@ def fem_verification(  # noqa: PLR0913 - mesmas entradas de analyze() mais as op
             input_hash=_input_hash(geometry, materials, loads, options),
         ),
     )
+    return verification, tuple(fields)
 
 
 def refresh_project(project: Project) -> tuple[Project, tuple[str, ...]]:
