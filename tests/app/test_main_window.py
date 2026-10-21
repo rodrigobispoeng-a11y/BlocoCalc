@@ -41,7 +41,7 @@ from blococalc.schemas import (  # noqa: E402
     Project,
     Reference,
 )
-from tests.factories import quadratic_tetra, quincunx_cap  # noqa: E402
+from tests.factories import box_field, quadratic_tetra, quincunx_cap  # noqa: E402
 
 Button = QtWidgets.QMessageBox.StandardButton
 
@@ -602,6 +602,7 @@ class FakePlotter(QWidget):
         self.meshes: dict[str, dict[str, Any]] = {}
         self.views: list[str] = []
         self.cleared = 0
+        self.picking: dict[str, Any] = {}
 
     def add_mesh(self, mesh: Any, **options: Any) -> None:
         self.meshes[options["name"]] = {"mesh": mesh, **options}
@@ -621,6 +622,9 @@ class FakePlotter(QWidget):
 
     def view_yz(self) -> None:
         self.views.append("yz")
+
+    def enable_point_picking(self, callback: Any, **options: Any) -> None:
+        self.picking = {"callback": callback, **options}
 
 
 def fake_factory(parent: object) -> tuple[FakePlotter, FakePlotter]:
@@ -789,3 +793,60 @@ def test_fem_fields_reach_the_3d_tab_and_go_away_with_edits(
     assert window.open_path(path)  # o `.bloco` não traz o campo (ADR-012)
     assert window.fem_fields == ()
     assert window.fem_result is not None
+
+
+def stress_view(project: Project) -> tuple[View3D, FakePlotter]:
+    pytest.importorskip("pyvista")
+    view = View3D(fake_factory)
+    assert isinstance(view.plotter, FakePlotter)
+    view.show_project(project)
+    view.show_fields(project, (box_field(2000.0, 2000.0, 1000.0, case_id="ELU1"),))
+    view.display_box.setCurrentText(view3d.STRESSES)
+    return view, view.plotter
+
+
+def test_stress_tools_show_only_with_stresses(app: object) -> None:
+    project = calculated(cases=1)
+    view, _ = stress_view(project)
+    assert not view.tools.isHidden()
+    view.display_box.setCurrentText(view3d.MODEL)
+    assert view.tools.isHidden()
+
+
+def test_stress_tools_cut_fade_deform_and_rescale_without_moving_the_camera(
+    app: object,
+) -> None:
+    # ADR-013: B1 2000 × 2000 × 1000 mm; campo de teste com σ3 = −z/100 e uz = −z/1000.
+    view, plotter = stress_view(calculated(cases=1))
+    views = len(plotter.views)
+    box, slider = view.cuts["x"]
+    slider.setValue(75)
+    box.setChecked(True)
+    assert view.stress_view().cut_x == pytest.approx(500.0)
+    assert plotter.meshes["tensoes"]["mesh"].bounds[1] == pytest.approx(500.0)
+    view.cuts["y"][0].setChecked(True)
+    assert view.stress_view().cut_y == pytest.approx(0.0)
+    view.opacity.setValue(40)
+    assert plotter.meshes["tensoes"]["opacity"] == pytest.approx(0.4)
+    view.scale_max.setValue(5.0)
+    assert plotter.meshes["tensoes"]["clim"] == (0.0, 5.0)
+    assert "máxima 10.0 MPa" in view.note.text()  # o pico continua o do caso
+    view.deformation.setValue(100.0)
+    assert plotter.meshes["tensoes"]["mesh"].bounds[5] == pytest.approx(900.0)
+    assert "deslocamento máximo real 1.000 mm" in view.note.text()
+    assert len(plotter.views) == views  # controles não voltam a câmera para a isométrica
+    view.case_box.setCurrentText("ELU1")
+    view.display_box.setCurrentText(view3d.MODEL)
+    assert len(plotter.views) == views + 1
+
+
+def test_clicking_shows_the_value_at_the_nearest_node(app: object) -> None:
+    view, plotter = stress_view(calculated(cases=1))
+    assert plotter.picking["left_clicking"] is True
+    plotter.picking["callback"]((1000.0, 1000.0, 990.0))
+    assert view.probe.text().startswith("Ponto clicado: σ3 = -10.00 MPa (compressão 10.00 MPa)")
+    view.cuts["x"][0].setChecked(True)  # a cena mudou: o valor antigo sai
+    assert view.probe.text() == ""
+    view.display_box.setCurrentText(view3d.MODEL)
+    plotter.picking["callback"]((0.0, 0.0, 0.0))
+    assert view.probe.text() == ""
