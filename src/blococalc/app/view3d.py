@@ -1,6 +1,7 @@
 """Aba 3D: bloco, estacas e modelo de bielas e tirantes de um caso (ADR-006), ou o bloco
 pintado pela compressão do MEF quando ele rodou nesta sessão (ADR-012), com cortes,
-opacidade, deformada, topo da escala e valor no ponto clicado (ADR-013).
+opacidade, deformada, topo da escala e valor no ponto clicado (ADR-013). O modelo traz as forças,
+as cargas, as reações e as cotas escritas, em kN ou tf (ADR-014).
 
 A cena vem pronta de `blococalc.viz.scene`; aqui só se escolhe o caso e se desenha. Sem
 PyVista instalado ou sem OpenGL, a aba mostra o motivo e o resto da tela segue funcionando.
@@ -25,8 +26,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from blococalc.analysis import strut_tie_layout
-from blococalc.schemas import FemField, MaterialsInput, Project
+from blococalc.analysis import characteristic_reactions, strut_tie_layout
+from blococalc.schemas import FemField, MaterialsInput, PileReaction, Project, StrutTieLayout
 from blococalc.standards.strength import strut_tie_strengths
 
 _NO_RESULT = "Calcule o bloco para ver o modelo em 3D."
@@ -90,6 +91,15 @@ class View3D(QWidget):
         bar.addWidget(self.case_box, 1)
         bar.addWidget(QLabel("Exibir"))
         bar.addWidget(self.display_box, 1)
+        self.labels_box = QCheckBox("Rótulos")
+        self.labels_box.setChecked(True)
+        self.labels_box.setToolTip(
+            "Forças nas barras, Nk/Fd/Nd nos pilares, Rk/Rd nas estacas, h/d/d'."
+        )
+        self.tf_box = QCheckBox("Forças em tf")
+        for box in (self.labels_box, self.tf_box):
+            box.toggled.connect(self._redraw)
+            bar.addWidget(box)
         self.view_buttons: dict[str, QPushButton] = {}
         try:
             widget, self.plotter = factory(self)
@@ -219,6 +229,8 @@ class View3D(QWidget):
         self.probe.clear()
         stresses = self.display_box.currentText() == STRESSES and self.fem_project is not None
         self.tools.setHidden(not stresses)
+        self.labels_box.setHidden(stresses)
+        self.tf_box.setHidden(stresses)
         try:
             from blococalc.viz import scene  # noqa: PLC0415 - extra opcional `viz`
         except ImportError:  # pragma: no cover - o CI instala o extra `viz`
@@ -239,8 +251,32 @@ class View3D(QWidget):
             message = _FLEXIBLE if layout is None else _legend()
         reactions = [r for r in project.result.reactions if r.case_id == case_id]
         self.scene = scene.cap_scene(project.geometry, reactions, layout)
+        if self.labels_box.isChecked():
+            self._add_labels(project, case_id, reactions, layout)
         self._tell(message)
         self._paint(reset_camera)
+
+    @property
+    def unit(self) -> str:
+        return "tf" if self.tf_box.isChecked() else "kN"
+
+    def _add_labels(
+        self,
+        project: Project,
+        case_id: str,
+        reactions: list[PileReaction],
+        layout: StrutTieLayout | None,
+    ) -> None:
+        """Rótulos da ADR-014; Rk só quando todos os pilares do caso têm Nk."""
+        from blococalc.viz.scene import TrussLoads, labeled  # noqa: PLC0415 - extra opcional `viz`
+
+        case = next(c for c in project.loads.cases if c.id == case_id)
+        try:
+            characteristic = characteristic_reactions(project, case_id)
+        except ValueError:
+            characteristic = None
+        loads = TrussLoads(case, project.loads.gamma_n, reactions, characteristic)
+        self.scene = labeled(self.scene, project.geometry, loads, layout, self.unit)
 
     def _draw_stresses(self, project: Project, case_id: str, reset_camera: bool) -> None:
         from blococalc.viz.scene import stress_scene  # noqa: PLC0415 - extra opcional `viz`
