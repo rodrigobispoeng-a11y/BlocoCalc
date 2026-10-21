@@ -1,6 +1,6 @@
 # ADR-014 — Rótulos do modelo de bielas e tirantes na aba 3D e Nk na entrada (schemas v8)
 
-- Status: proposta
+- Status: aceita (aprovada por Rodrigo em 21/10/2026)
 - Contexto: a aba 3D (ADR-006) desenha a treliça do M5 com a espessura proporcional à força,
   mas sem números: para saber a força numa biela ou a reação de uma estaca é preciso ir às
   tabelas. O vídeo de referência (21/10/2026) mostra a força escrita em cada barra, as cargas
