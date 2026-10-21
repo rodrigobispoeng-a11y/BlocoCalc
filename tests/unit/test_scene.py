@@ -11,7 +11,6 @@ import pyvista as pv
 from blococalc.analysis import strut_tie_layout
 from blococalc.schemas import (
     ColumnLoad,
-    FemField,
     LoadCase,
     LoadsInput,
     MaterialsInput,
@@ -34,7 +33,7 @@ from blococalc.viz.scene import (
     draw,
     stress_scene,
 )
-from tests.factories import four_pile_cap
+from tests.factories import four_pile_cap, quadratic_tetra
 
 GEOMETRY = four_pile_cap()
 REACTIONS = tuple(
@@ -140,22 +139,6 @@ def test_members_without_force_keep_the_minimum_radius() -> None:
     )
     scene = cap_scene(GEOMETRY, REACTIONS, idle)
     assert scene.radius("biela_E1") == pytest.approx(0.2 * 0.04 * 2000.0)
-
-
-def quadratic_tetra(sigma3: tuple[float, ...]) -> FemField:
-    corners = [(0.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (0.0, 1000.0, 0.0), (0.0, 0.0, 1000.0)]
-    edges = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)]  # ordem do C3D10
-    mids = [
-        tuple((a + b) / 2 for a, b in zip(corners[i], corners[j], strict=True)) for i, j in edges
-    ]
-    nodes = [c for point in (*corners, *mids) for c in point]
-    return FemField(
-        case_id="C1",
-        nodes=tuple(nodes),
-        tetrahedra=tuple(range(10)),
-        displacements=(0.0,) * 30,
-        sigma3=sigma3,
-    )
 
 
 def test_stress_scene_paints_compression_in_bands() -> None:

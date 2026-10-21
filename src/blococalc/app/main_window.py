@@ -13,7 +13,7 @@ import threading
 from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from PySide6.QtCore import QMarginsF, QObject, Signal
 from PySide6.QtGui import (
@@ -49,7 +49,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from blococalc.analysis import analyze, fem_verification, refresh_project, strut_tie_layout
+from blococalc.analysis import (
+    analyze,
+    fem_verification_with_fields,
+    refresh_project,
+    strut_tie_layout,
+)
 from blococalc.app.view3d import View3D
 from blococalc.persistence.project import EXTENSION, ProjectFileError, load_project, save_project
 from blococalc.report import bar_label, calculation_report
@@ -64,6 +69,7 @@ from blococalc.schemas import (
     ColumnLoad,
     CombinationType,
     DetailingInput,
+    FemField,
     GeometryInput,
     LoadCase,
     LoadsInput,
@@ -130,7 +136,8 @@ def _append_row(table: QTableWidget, values: Sequence[object]) -> None:
 
 
 class _FemRunner(QObject):
-    """Roda `fem_verification` numa thread e entrega o resultado (ou a falha) na thread da tela."""
+    """Roda o MEF numa thread e entrega o resultado com os campos de tensão (ADR-012), ou a
+    falha, na thread da tela."""
 
     finished = Signal(object)
 
@@ -143,7 +150,9 @@ class _FemRunner(QObject):
         self, inputs: tuple[GeometryInput, MaterialsInput, LoadsInput, DetailingInput]
     ) -> None:
         try:
-            outcome: AnalysisResult | Exception = fem_verification(*inputs)
+            outcome: tuple[AnalysisResult, tuple[FemField, ...]] | Exception = (
+                fem_verification_with_fields(*inputs)
+            )
         except Exception as error:  # qualquer falha do MEF vai para a tela
             outcome = error
         self.finished.emit(outcome)
@@ -159,6 +168,8 @@ def _rows(table: QTableWidget) -> list[list[str]]:
 
 class MainWindow(QMainWindow):
     """Formulário de entrada à esquerda e resultados em abas à direita."""
+
+    fem_fields: tuple[FemField, ...] = ()  # só nesta sessão, fora do `.bloco` (ADR-012)
 
     def __init__(self) -> None:
         super().__init__()
@@ -470,6 +481,7 @@ class MainWindow(QMainWindow):
         if self.fem_result is not None:
             self.fem_result = None
             self._show_fem(None)
+            self._keep_fields(())
             self.status.setText("Entradas alteradas: o resultado do MEF foi descartado.")
 
     def _mark_modified(self, *_: object) -> None:
@@ -529,6 +541,7 @@ class MainWindow(QMainWindow):
             self.result, self.fem_result = project.result, project.fem_result
             self._show(project.result)
             self._show_fem(project.fem_result)
+            self._keep_fields(())
         finally:
             self._loading = False
 
@@ -556,6 +569,8 @@ class MainWindow(QMainWindow):
         self.result, self.fem_result = project.result, project.fem_result
         self._show(project.result)
         self._show_fem(project.fem_result)
+        if project.fem_result is None:  # resultado refeito: o campo do MEF deixou de valer
+            self._keep_fields(())
         self.path, self.modified = path, False
         self._update_title()
         self.status.setText(" ".join((f"Projeto salvo em {path}.", *warnings)))
@@ -654,6 +669,8 @@ class MainWindow(QMainWindow):
         self.result, self.fem_result = project.result, project.fem_result
         self._show(project.result)
         self._show_fem(project.fem_result)
+        if project.fem_result is None:  # resultado refeito: o campo do MEF deixou de valer
+            self._keep_fields(())
         writer = QPdfWriter(str(path))
         writer.setTitle(f"Memorial de cálculo: {project.name}")
         writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
@@ -695,6 +712,8 @@ class MainWindow(QMainWindow):
         self.result, self.fem_result = project.result, project.fem_result
         self._show(project.result)
         self._show_fem(project.fem_result)
+        if project.fem_result is None:  # resultado refeito: o campo do MEF deixou de valer
+            self._keep_fields(())
         try:
             path.write_bytes(data)
         except OSError as error:
@@ -725,19 +744,32 @@ class MainWindow(QMainWindow):
     def _fem_finished(self, outcome: object) -> None:
         self.fem_running = False
         self.form_area.setEnabled(True)
-        if not isinstance(outcome, AnalysisResult):
+        if not isinstance(outcome, tuple):
             hint = " Instale o extra fem (gmsh)." if isinstance(outcome, ImportError) else ""
             self.status.setText(f"Não foi possível rodar o MEF: {outcome}.{hint}")
             return
-        self.fem_result = outcome
-        self._show_fem(outcome)
+        result, fields = cast(tuple[AnalysisResult, tuple[FemField, ...]], outcome)
+        self.fem_result = result
+        self._keep_fields(fields)
+        self._show_fem(result)
         self._mark_modified()
-        failed = sum(c.status is not CheckStatus.OK for c in outcome.checks)
+        failed = sum(c.status is not CheckStatus.OK for c in result.checks)
         self.status.setText(
             f"MEF concluído: {failed} verificação(ões) não atendida(s). Veja a aba MEF."
             if failed
             else "MEF concluído: todas as verificações atendidas. Veja a aba MEF."
         )
+
+    def _keep_fields(self, fields: tuple[FemField, ...]) -> None:
+        """Campos de tensão para a aba 3D; outro projeto ou entrada alterada os descarta."""
+        if not fields and not self.fem_fields:
+            return
+        self.fem_fields = fields
+        try:
+            project = self.project() if fields else None
+        except ValueError:
+            project = None
+        self.view3d.show_fields(project, fields)
 
     def _show_fem(self, result: AnalysisResult | None) -> None:
         if result is None:

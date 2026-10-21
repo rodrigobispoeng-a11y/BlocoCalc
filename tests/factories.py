@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from blococalc.schemas import Cap, Column, GeometryInput, Pile, PileShape
+from blococalc.schemas import Cap, Column, FemField, GeometryInput, Pile, PileShape
 
 
 def four_pile_cap(h: float = 1000.0) -> GeometryInput:
@@ -142,4 +142,21 @@ def staggered_cap(
         ),
         piles=tuple(Pile(id=f"E{k + 1}", x=x, y=y, size=600.0) for k, (x, y) in enumerate(points)),
         columns=(Column(id="P1", x=0.0, y=cy, bx=column[0], by=column[1]),),
+    )
+
+
+def quadratic_tetra(sigma3: tuple[float, ...], case_id: str = "C1") -> FemField:
+    """Campo do MEF com um único tetraedro quadrático (C3D10) de 1 m de aresta."""
+    corners = [(0.0, 0.0, 0.0), (1000.0, 0.0, 0.0), (0.0, 1000.0, 0.0), (0.0, 0.0, 1000.0)]
+    edges = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)]  # ordem do C3D10
+    mids = [
+        tuple((a + b) / 2 for a, b in zip(corners[i], corners[j], strict=True)) for i, j in edges
+    ]
+    nodes = [c for point in (*corners, *mids) for c in point]
+    return FemField(
+        case_id=case_id,
+        nodes=tuple(nodes),
+        tetrahedra=tuple(range(10)),
+        displacements=(0.0,) * 30,
+        sigma3=sigma3,
     )
