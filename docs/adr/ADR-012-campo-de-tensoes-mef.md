@@ -1,6 +1,6 @@
 # ADR-012 — Campo de tensões do MEF na aba 3D
 
-- Status: proposta
+- Status: aceita (aprovada por Rodrigo em 21/10/2026)
 - Contexto: o objetivo visual do programa (vídeo enviado por Rodrigo em 21/10/2026) é ver o
   bloco pintado pela tensão principal de compressão do MEF, em faixas de cor, como nos
   programas de elementos finitos. O MEF da D14 já resolve o bloco em sólidos C3D10 e
