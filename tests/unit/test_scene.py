@@ -6,6 +6,8 @@ import pytest
 
 pytest.importorskip("pyvista")
 
+import pyvista as pv
+
 from blococalc.analysis import strut_tie_layout
 from blococalc.schemas import (
     ColumnLoad,
@@ -19,14 +21,19 @@ from blococalc.schemas import (
 )
 from blococalc.viz.scene import (
     CAP_OPACITY,
+    COLUMN_COLOR,
+    COMPRESSION,
     COMPRESSION_COLOR,
     NEUTRAL_COLOR,
+    STRESS_BANDS,
     STRUT_COLOR,
     TENSION_COLOR,
     TIE_COLOR,
     cap_scene,
+    draw,
+    stress_scene,
 )
-from tests.factories import four_pile_cap
+from tests.factories import four_pile_cap, quadratic_tetra
 
 GEOMETRY = four_pile_cap()
 REACTIONS = tuple(
@@ -132,3 +139,54 @@ def test_members_without_force_keep_the_minimum_radius() -> None:
     )
     scene = cap_scene(GEOMETRY, REACTIONS, idle)
     assert scene.radius("biela_E1") == pytest.approx(0.2 * 0.04 * 2000.0)
+
+
+def test_stress_scene_paints_compression_in_bands() -> None:
+    # ADR-012: compressão = −σ3 sem a tração, 12 faixas de 0 ao máximo do caso.
+    sigma3 = (-8.0, -2.0, 1.5, 0.0, -4.0, -1.0, 0.5, -3.0, -6.0, -0.5)
+    scene = stress_scene(GEOMETRY, quadratic_tetra(sigma3))
+    item = scene.item("tensoes")
+    grid = item.mesh
+    assert isinstance(grid, pv.UnstructuredGrid)
+    assert grid.n_cells == 1
+    assert grid.celltypes[0] == pv.CellType.QUADRATIC_TETRA
+    assert item.scalars == COMPRESSION
+    assert list(grid.point_data[COMPRESSION]) == pytest.approx(
+        [8.0, 2.0, 0.0, 0.0, 4.0, 1.0, 0.0, 3.0, 6.0, 0.5]
+    )
+    assert item.clim == (0.0, 8.0)
+    assert item.bands == STRESS_BANDS == 12
+    assert scene.peak == 8.0
+    # Pilares e estacas em cinza, sem treliça e sem bloco translúcido.
+    assert scene.item("pilar_P1").color == COLUMN_COLOR
+    assert scene.item("estaca_E1").color == NEUTRAL_COLOR
+    assert {i.name for i in scene.items} == {"tensoes", "pilar_P1", "estaca_E1", "estaca_E2",
+                                             "estaca_E3", "estaca_E4"}  # fmt: skip
+
+
+def test_field_without_compression_keeps_a_valid_range() -> None:
+    scene = stress_scene(GEOMETRY, quadratic_tetra((1.0,) * 10))
+    assert scene.peak == 0.0
+    assert scene.item("tensoes").clim == (0.0, 1.0)
+
+
+class RecordingPlotter:
+    def __init__(self) -> None:
+        self.calls: dict[str, dict[str, object]] = {}
+
+    def add_mesh(self, mesh: object, **options: object) -> None:
+        self.calls[str(options["name"])] = options
+
+
+def test_draw_paints_scalars_and_colors_the_rest() -> None:
+    plotter = RecordingPlotter()
+    draw(plotter, stress_scene(GEOMETRY, quadratic_tetra((-8.0,) * 10)))
+    painted = plotter.calls["tensoes"]
+    assert painted["scalars"] == COMPRESSION
+    assert painted["n_colors"] == 12
+    assert painted["clim"] == (0.0, 8.0)
+    assert "color" not in painted
+    assert plotter.calls["estaca_E1"]["color"] == NEUTRAL_COLOR
+    draw(plotter, cap_scene(GEOMETRY, REACTIONS, None))
+    assert plotter.calls["bloco"]["opacity"] == CAP_OPACITY
+    assert "scalars" not in plotter.calls["bloco"]

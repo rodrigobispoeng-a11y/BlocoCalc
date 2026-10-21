@@ -1,4 +1,5 @@
-"""Aba 3D: bloco, estacas e modelo de bielas e tirantes de um caso (ADR-006).
+"""Aba 3D: bloco, estacas e modelo de bielas e tirantes de um caso (ADR-006), ou o bloco
+pintado pela compressão do MEF quando ele rodou nesta sessão (ADR-012).
 
 A cena vem pronta de `blococalc.viz.scene`; aqui só se escolhe o caso e se desenha. Sem
 PyVista instalado ou sem OpenGL, a aba mostra o motivo e o resto da tela segue funcionando.
@@ -20,9 +21,12 @@ from PySide6.QtWidgets import (
 )
 
 from blococalc.analysis import strut_tie_layout
-from blococalc.schemas import Project
+from blococalc.schemas import FemField, MaterialsInput, Project
+from blococalc.standards.strength import strut_tie_strengths
 
 _NO_RESULT = "Calcule o bloco para ver o modelo em 3D."
+MODEL, STRESSES = "modelo de bielas e tirantes", "tensões do MEF"
+_NO_FIELD = "Sem campo de tensões do MEF para o caso {case} (bloco flexível não tem)."
 _FLEXIBLE = "Bloco flexível (D9): sem bielas e tirantes; estacas coloridas pela reação."
 
 
@@ -61,6 +65,13 @@ class View3D(QWidget):
         self.scene: Any = None  # viz.scene.CapScene; Any porque o extra `viz` é opcional
         self.case_box = QComboBox()
         self.case_box.currentTextChanged.connect(self._draw)
+        self.fields: dict[str, FemField] = {}
+        self.fem_project: Project | None = None
+        self.display_box = QComboBox()
+        self.display_box.addItems([MODEL, STRESSES])
+        self.display_box.setEnabled(False)
+        self.display_box.setToolTip('Tensões do MEF: rode "Conferir por MEF" nesta sessão.')
+        self.display_box.currentTextChanged.connect(self._draw)
         self.note = QLabel(_NO_RESULT)
         self.note.setWordWrap(True)
         self.plotter: Plotter | None = None
@@ -68,6 +79,8 @@ class View3D(QWidget):
         bar = QHBoxLayout()
         bar.addWidget(QLabel("Caso"))
         bar.addWidget(self.case_box, 1)
+        bar.addWidget(QLabel("Exibir"))
+        bar.addWidget(self.display_box, 1)
         self.view_buttons: dict[str, QPushButton] = {}
         try:
             widget, self.plotter = factory(self)
@@ -102,26 +115,41 @@ class View3D(QWidget):
         current = self.case_box.currentText()
         self.case_box.blockSignals(True)
         self.case_box.clear()
-        if self.project is not None:
-            ids = [case.id for case in self.project.loads.cases]
+        source = self.project or self.fem_project
+        if source is not None:
+            ids = [case.id for case in source.loads.cases]
             self.case_box.addItems(ids)
             if current in ids:
                 self.case_box.setCurrentText(current)
         self.case_box.blockSignals(False)
         self._draw()
 
+    def show_fields(self, project: Project | None, fields: tuple[FemField, ...]) -> None:
+        """Guarda os campos do MEF desta sessão (ADR-012); sem campos, volta ao modelo."""
+        self.fem_project = project if fields else None
+        self.fields = {field.case_id: field for field in fields}
+        self.display_box.blockSignals(True)
+        self.display_box.setEnabled(bool(fields))
+        if not fields:
+            self.display_box.setCurrentText(MODEL)
+        self.display_box.blockSignals(False)
+        self.show_project(self.project)
+
     def _draw(self, *_: object) -> None:
         if self.plotter is not None:
             self.plotter.clear()
-        project, case_id = self.project, self.case_box.currentText()
         self.scene = None
-        if project is None or project.result is None or not case_id:
-            self._tell(_NO_RESULT)
-            return
         try:
-            from blococalc.viz.scene import cap_scene  # noqa: PLC0415 - extra opcional `viz`
+            from blococalc.viz import scene  # noqa: PLC0415 - extra opcional `viz`
         except ImportError:  # pragma: no cover - o CI instala o extra `viz`
             self._tell('Visualização 3D indisponível: instale o extra ".[viz]".')
+            return
+        if self.display_box.currentText() == STRESSES and self.fem_project is not None:
+            self._draw_stresses(self.fem_project, self.case_box.currentText())
+            return
+        project, case_id = self.project, self.case_box.currentText()
+        if project is None or project.result is None or not case_id:
+            self._tell(_NO_RESULT)
             return
         try:
             layout = strut_tie_layout(project, case_id)
@@ -130,12 +158,27 @@ class View3D(QWidget):
         else:
             message = _FLEXIBLE if layout is None else _legend()
         reactions = [r for r in project.result.reactions if r.case_id == case_id]
-        self.scene = cap_scene(project.geometry, reactions, layout)
+        self.scene = scene.cap_scene(project.geometry, reactions, layout)
         self._tell(message)
-        if self.plotter is None:
+        self._paint()
+
+    def _draw_stresses(self, project: Project, case_id: str) -> None:
+        from blococalc.viz.scene import stress_scene  # noqa: PLC0415 - extra opcional `viz`
+
+        field = self.fields.get(case_id)
+        if field is None:
+            self._tell(_NO_FIELD.format(case=case_id))
             return
-        for item in self.scene.items:
-            self.plotter.add_mesh(item.mesh, color=item.color, opacity=item.opacity, name=item.name)
+        self.scene = stress_scene(project.geometry, field)
+        self._tell(_stress_note(case_id, self.scene.peak, project.materials))
+        self._paint()
+
+    def _paint(self) -> None:
+        if self.plotter is None or self.scene is None:
+            return
+        from blococalc.viz.scene import draw  # noqa: PLC0415 - extra opcional `viz`
+
+        draw(self.plotter, self.scene)
         self.plotter.view_isometric()
 
     def _tell(self, message: str) -> None:
@@ -152,3 +195,14 @@ def _legend() -> str:
         color = f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}"
         parts.append(f'<span style="color:{color}">&#9632;</span> {label}')
     return "&nbsp;&nbsp;".join(parts) + "&nbsp;&nbsp;(espessura proporcional à força)"
+
+
+def _stress_note(case_id: str, peak: float, materials: MaterialsInput) -> str:
+    """Pico do caso e, só como referência, os limites do método (ADR-012, item 4)."""
+    strengths = strut_tie_strengths(materials)
+    return (
+        f"Compressão do MEF no caso {case_id}: máxima {peak:.1f} MPa. Referência do método "
+        f"(NBR 6118:2023, 22.3.2): fcd1 = {strengths.fcd1:.1f} MPa, "
+        f"fcd3 = {strengths.fcd3:.1f} MPa. O pico sob o pilar é concentração do modelo "
+        "elástico, não verificação: quem verifica é o método e as médias da aba MEF."
+    )

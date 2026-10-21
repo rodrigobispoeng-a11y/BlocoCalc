@@ -22,7 +22,7 @@ from PySide6.QtWidgets import QWidget  # noqa: E402
 from blococalc.analysis import (  # noqa: E402
     FEM_METHOD,
     analyze,
-    fem_verification,
+    fem_verification_with_fields,
     refresh_project,
 )
 from blococalc.app import __main__ as entry  # noqa: E402
@@ -35,12 +35,13 @@ from blococalc.schemas import (  # noqa: E402
     Check,
     CheckStatus,
     CombinationType,
+    FemField,
     MaterialsInput,
     PileShape,
     Project,
     Reference,
 )
-from tests.factories import quincunx_cap  # noqa: E402
+from tests.factories import quadratic_tetra, quincunx_cap  # noqa: E402
 
 Button = QtWidgets.QMessageBox.StandardButton
 
@@ -326,17 +327,18 @@ def wait_fem(window: MainWindow) -> None:
         time.sleep(0.01)
 
 
-def fake_fem(*inputs: Any) -> AnalysisResult:
+def fake_fem(*inputs: Any) -> tuple[AnalysisResult, tuple[FemField, ...]]:
     result = analyze(*inputs)
-    return result.model_copy(
+    fem = result.model_copy(
         update={"audit": result.audit.model_copy(update={"method": FEM_METHOD})}
     )
+    return fem, tuple(quadratic_tetra((-8.0,) * 10, case.id) for case in inputs[2].cases)
 
 
 def test_fem_runs_in_background_and_is_saved(
     app: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(main_window, "fem_verification", fake_fem)
+    monkeypatch.setattr(main_window, "fem_verification_with_fields", fake_fem)
     window = MainWindow()
     window.fem_button.click()
     assert not window.form_area.isEnabled()
@@ -360,7 +362,7 @@ def test_fem_failure_is_shown(app: object, monkeypatch: pytest.MonkeyPatch) -> N
         # Mesma mensagem de blococalc.fem.ccx.FemError, sem exigir o gmsh nos testes da tela.
         raise RuntimeError("CalculiX não encontrado (parâmetro, BLOCOCALC_CCX ou PATH)")
 
-    monkeypatch.setattr(main_window, "fem_verification", missing_ccx)
+    monkeypatch.setattr(main_window, "fem_verification_with_fields", missing_ccx)
     window = MainWindow()
     window.run_fem()
     wait_fem(window)
@@ -370,7 +372,7 @@ def test_fem_failure_is_shown(app: object, monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_editing_inputs_discards_fem_result(app: object, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(main_window, "fem_verification", fake_fem)
+    monkeypatch.setattr(main_window, "fem_verification_with_fields", fake_fem)
     window = MainWindow()
     window.run_fem()
     wait_fem(window)
@@ -390,7 +392,9 @@ def test_real_fem_from_the_screen(app: object, monkeypatch: pytest.MonkeyPatch) 
     if find_ccx() is None:
         pytest.skip("CalculiX (ccx) não instalado")
     monkeypatch.setattr(
-        main_window, "fem_verification", functools.partial(fem_verification, mesh_size=300.0)
+        main_window,
+        "fem_verification_with_fields",
+        functools.partial(fem_verification_with_fields, mesh_size=300.0),
     )
     window = MainWindow()
     window.run_fem()
@@ -398,6 +402,7 @@ def test_real_fem_from_the_screen(app: object, monkeypatch: pytest.MonkeyPatch) 
     assert window.fem_result is not None, window.status.text()
     assert window.fem_result.audit.method == FEM_METHOD
     assert len(window.fem_result.reactions) == 4
+    assert [f.case_id for f in window.fem_fields] == ["ELU1"]
 
 
 def test_defaults_match_contract_defaults(app: object) -> None:
@@ -727,3 +732,60 @@ def test_3d_tab_is_cleared_when_the_form_is_invalid(
     monkeypatch.setattr(window, "project", invalid)
     window._show(window.result)
     assert window.view3d.scene is None
+
+
+def test_3d_tab_paints_fem_stresses_of_the_session(app: object) -> None:
+    # ADR-012: "tensões do MEF" só depois de rodar o MEF; nota com o pico e fcd1/fcd3 (22.3.2).
+    pytest.importorskip("pyvista")
+    from blococalc.viz.scene import COMPRESSION  # noqa: PLC0415 - extra opcional `viz`
+
+    view = View3D(fake_factory)
+    plotter = view.plotter
+    assert isinstance(plotter, FakePlotter)
+    project = calculated()
+    view.show_project(project)
+    assert not view.display_box.isEnabled()
+    view.show_fields(project, (quadratic_tetra((-8.0,) * 10, "ELU1"),))
+    assert view.display_box.isEnabled()
+    assert "biela_E1" in plotter.meshes  # continua no modelo até o usuário trocar
+    view.display_box.setCurrentText(view3d.STRESSES)
+    assert plotter.meshes["tensoes"]["scalars"] == COMPRESSION
+    assert "biela_E1" not in plotter.meshes
+    note = view.note.text()
+    assert "máxima 8.0 MPa" in note
+    assert "fcd1 = 18.3 MPa" in note  # 0,85·(1 − 35/250)·35/1,4
+    assert "fcd3 = 15.5 MPa" in note  # 0,72·(1 − 35/250)·35/1,4
+    view.case_box.setCurrentText("ELU2")
+    assert view.scene is None
+    assert "tensoes" not in plotter.meshes
+    assert "ELU2" in view.note.text()
+    view.show_fields(None, ())
+    assert not view.display_box.isEnabled()
+    assert view.display_box.currentText() == view3d.MODEL
+    assert "biela_E1" in plotter.meshes
+
+
+def test_fem_fields_reach_the_3d_tab_and_go_away_with_edits(
+    app: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("pyvista")
+    monkeypatch.setattr(main_window, "fem_verification_with_fields", fake_fem)
+    window = MainWindow()
+    window.run_fem()  # sem calcular antes: a aba usa as entradas do MEF
+    wait_fem(window)
+    assert [f.case_id for f in window.fem_fields] == ["ELU1"]
+    assert window.view3d.display_box.isEnabled()
+    window.view3d.display_box.setCurrentText(view3d.STRESSES)
+    assert window.view3d.scene is not None
+    assert window.view3d.scene.peak == pytest.approx(8.0)
+    path = tmp_path / "b1.bloco"
+    assert window.save_to(path)
+    assert window.fem_fields  # salvar não descarta o campo
+    window.cap["h"].setValue(1100.0)
+    assert window.fem_fields == ()
+    assert not window.view3d.display_box.isEnabled()
+    window.run_fem()
+    wait_fem(window)
+    assert window.open_path(path)  # o `.bloco` não traz o campo (ADR-012)
+    assert window.fem_fields == ()
+    assert window.fem_result is not None
