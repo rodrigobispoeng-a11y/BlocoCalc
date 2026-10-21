@@ -77,14 +77,14 @@ def test_defaults_follow_approved_decisions() -> None:
     assert (materials.gamma_c, materials.gamma_s, materials.fyk) == (1.4, 1.15, 500.0)
 
 
-@pytest.mark.parametrize("old", ["1", "2", "3", "4", "5", "6"])
-def test_older_documents_are_read_as_v7(old: str) -> None:
+@pytest.mark.parametrize("old", ["1", "2", "3", "4", "5", "6", "7"])
+def test_older_documents_are_read_as_v8(old: str) -> None:
     data = four_pile_cap().model_dump(mode="json")
     data["schema_version"] = old
     for pile in data["piles"]:
         del pile["axial_stiffness"]
     geometry = GeometryInput.model_validate(data)
-    assert geometry.schema_version == "7"
+    assert geometry.schema_version == "8"
     assert all(p.axial_stiffness is None for p in geometry.piles)
     detailing = DetailingInput.model_validate({"schema_version": old, "bar_diameter": 20.0})
     assert detailing.max_aggregate_size == 19.0
@@ -119,9 +119,21 @@ def test_reinforcement_bars_are_optional() -> None:
         DetailingInput(max_aggregate_size=0.0)
 
 
+def test_characteristic_normal_is_optional_and_positive() -> None:
+    # ADR-014: Nk sem γf, só para Rk e rótulos; v7 lê sem o campo.
+    load = ColumnLoad(column_id="P1", n=980e3)
+    assert load.nk is None
+    assert ColumnLoad(column_id="P1", n=980e3, nk=700e3).nk == 700e3
+    with pytest.raises(ValidationError):
+        ColumnLoad(column_id="P1", n=980e3, nk=0.0)
+    old = {"schema_version": "7", "cases": [{"id": "C1", "column_loads": [
+        {"column_id": "P1", "n": 980e3}]}]}  # fmt: skip
+    assert LoadsInput.model_validate(old).cases[0].column_loads[0].nk is None
+
+
 def test_unknown_schema_version_is_rejected() -> None:
     data = four_pile_cap().model_dump(mode="json")
-    data["schema_version"] = "8"
+    data["schema_version"] = "9"
     with pytest.raises(ValidationError):
         GeometryInput.model_validate(data)
 

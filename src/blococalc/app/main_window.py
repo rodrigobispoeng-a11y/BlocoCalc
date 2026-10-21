@@ -97,7 +97,12 @@ _STIFFNESS_HELP = (
 )
 _COLUMN_HEADERS = ("Pilar", "x [mm]", "y [mm]", "bx [mm]", "by [mm]", "ρ [%]")
 _LOAD_HEADERS = ("Caso", "Pilar", "Nd [kN]", "Mxd [kN·m]", "Myd [kN·m]", "Hxd [kN]", "Hyd [kN]",
-                 "Combinação")  # fmt: skip
+                 "Combinação", "Nk [kN]")  # fmt: skip
+_DEFAULT_LOAD = ("ELU1", "P1", 980.0, 0.0, 0.0, 0.0, 0.0, "normal", "")
+_NK_HELP = (
+    "Força normal característica (sem γf), opcional: só para a reação Rk e os rótulos da aba 3D "
+    "(ADR-014). Vazio = sem Rk."
+)
 # Rótulos da tela para os enums do contrato; célula vazia vale o primeiro (padrão do contrato).
 _SHAPES = {"circular": PileShape.CIRCULAR, "quadrada": PileShape.SQUARE}
 _COMBINATIONS = {
@@ -126,6 +131,13 @@ def _table(headers: Sequence[str], rows: Sequence[Sequence[object]]) -> QTableWi
     for row in rows:
         _append_row(table, row)
     return table
+
+
+def _tooltips(table: QTableWidget, texts: dict[int, str]) -> None:
+    for column, text in texts.items():
+        header = table.horizontalHeaderItem(column)
+        if header is not None:
+            header.setToolTip(text)
 
 
 def _append_row(table: QTableWidget, values: Sequence[object]) -> None:
@@ -196,7 +208,7 @@ class MainWindow(QMainWindow):
             "gamma_c": _spin(1.4, 2.0, decimals=2, minimum=1.0),
             "gamma_s": _spin(1.15, 2.0, decimals=2, minimum=1.0),
         }
-        self.loads = _table(_LOAD_HEADERS, [("ELU1", "P1", 980.0, 0.0, 0.0, 0.0, 0.0, "normal")])
+        self.loads = _table(_LOAD_HEADERS, [_DEFAULT_LOAD])
         self.gamma_n = _spin(1.2, 2.0, decimals=2, minimum=1.0)
         self.bar_diameter = _spin(16.0, 40.0)
         self.max_aggregate = _spin(19.0, 50.0, minimum=4.8)
@@ -210,10 +222,8 @@ class MainWindow(QMainWindow):
         self.piles = _table(
             _PILE_HEADERS, [(*pile, 400.0, "circular", "") for pile in _DEFAULT_PILES]
         )
-        for column, help_text in ((3, _SIZE_HELP), (5, _STIFFNESS_HELP)):
-            header = self.piles.horizontalHeaderItem(column)
-            if header is not None:
-                header.setToolTip(help_text)
+        _tooltips(self.piles, {3: _SIZE_HELP, 5: _STIFFNESS_HELP})
+        _tooltips(self.loads, {len(_LOAD_HEADERS) - 1: _NK_HELP})
         self.summary = QPlainTextEdit(readOnly=True)
         self.reactions_table = QTableWidget()
         self.checks_table = QTableWidget()
@@ -343,7 +353,7 @@ class MainWindow(QMainWindow):
         materials = MaterialsInput(**{k: b.value() for k, b in self.materials.items()})
         cases: dict[str, list[ColumnLoad]] = {}
         combinations: dict[str, CombinationType] = {}
-        for case_id, column_id, n, mx, my, hx, hy, combination in _rows(self.loads):
+        for case_id, column_id, n, mx, my, hx, hy, combination, nk in _rows(self.loads):
             kind = _choice(combination, _COMBINATIONS, f"combinação do caso {case_id}")
             if combinations.setdefault(case_id, kind) is not kind:
                 raise ValueError(f"o caso {case_id} tem linhas com combinações diferentes")
@@ -355,6 +365,7 @@ class MainWindow(QMainWindow):
                     my=float(my) * KNM,
                     hx=float(hx) * KN,
                     hy=float(hy) * KN,
+                    nk=float(nk) * KN if nk else None,
                 )
             )
         if not cases:
@@ -816,6 +827,7 @@ def _load_rows(loads: LoadsInput) -> list[tuple[object, ...]]:
             c.hx / KN,
             c.hy / KN,
             _label(case.combination, _COMBINATIONS),
+            "" if c.nk is None else c.nk / KN,
         )
         for case in loads.cases
         for c in case.column_loads

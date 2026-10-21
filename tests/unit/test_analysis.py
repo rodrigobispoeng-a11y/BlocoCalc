@@ -11,6 +11,7 @@ import pytest
 from blococalc import analysis
 from blococalc.analysis import analyze
 from blococalc.core.cap_truss import cap_truss
+from blococalc.core.reactions import rigid_cap_reactions
 from blococalc.schemas import (
     Cap,
     CheckStatus,
@@ -22,6 +23,7 @@ from blococalc.schemas import (
     LoadsInput,
     MaterialsInput,
     Pile,
+    Project,
     ReinforcementKind,
 )
 from blococalc.standards.strength import strut_tie_strengths
@@ -302,3 +304,48 @@ def test_piles_with_different_stiffness_warn_about_m1() -> None:
     mixed = (piles[0].model_copy(update={"axial_stiffness": 500e3}), *piles[1:])
     result = analyze(four_pile_cap().model_copy(update={"piles": mixed}), C35, loads(980e3))
     assert any(w.startswith("Estacas com rigidez diferente") for w in result.warnings)
+
+
+def b1_project(*loads: ColumnLoad, self_weight: bool = True) -> Project:
+    geometry, materials = four_pile_cap(), MaterialsInput(fck=35.0)
+    case = LoadCase(id="C1", column_loads=loads)
+    inputs = LoadsInput(cases=(case,), include_cap_self_weight=self_weight)
+    return Project(name="B1", geometry=geometry, materials=materials, loads=inputs)
+
+
+def test_characteristic_reactions_use_nk_in_m1() -> None:
+    # ADR-014: B1 com Nk = 700 kN e peso próprio da D7: Rk = 700 · 1,05 / 4 = 183,75 kN.
+    project = b1_project(ColumnLoad(column_id="P1", n=980e3, nk=700e3))
+    rk = analysis.characteristic_reactions(project, "C1")
+    assert rk is not None
+    assert [r.force for r in rk] == pytest.approx([183.75e3] * 4)
+    bare = b1_project(ColumnLoad(column_id="P1", n=980e3, nk=700e3), self_weight=False)
+    assert [r.force for r in analysis.characteristic_reactions(bare, "C1") or ()] == (
+        pytest.approx([175e3] * 4)
+    )
+
+
+def test_characteristic_reactions_scale_moments_by_nk_over_fd() -> None:
+    project = b1_project(ColumnLoad(column_id="P1", n=980e3, my=140e6, hx=14e3, nk=700e3))
+    rk = analysis.characteristic_reactions(project, "C1")
+    expected = rigid_cap_reactions(
+        four_pile_cap(),
+        LoadCase(id="C1", column_loads=(ColumnLoad(column_id="P1", n=700e3, my=100e6, hx=10e3),)),
+        35e3,
+    )
+    assert rk is not None
+    assert [r.force for r in rk] == pytest.approx([r.force for r in expected])
+    assert rk[0].force != rk[1].force
+
+
+def test_characteristic_reactions_need_nk_on_every_column() -> None:
+    assert (
+        analysis.characteristic_reactions(b1_project(ColumnLoad(column_id="P1", n=980e3)), "C1")
+        is None
+    )
+    with pytest.raises(ValueError, match="não existe"):
+        analysis.characteristic_reactions(b1_project(ColumnLoad(column_id="P1", n=980e3)), "C9")
+    with pytest.raises(ValueError, match="Fd de compressão"):
+        analysis.characteristic_reactions(
+            b1_project(ColumnLoad(column_id="P1", n=-10e3, nk=5e3)), "C1"
+        )

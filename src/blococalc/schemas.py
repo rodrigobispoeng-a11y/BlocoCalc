@@ -13,8 +13,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION: Literal["7"] = "7"
-_READABLE_VERSIONS = ("1", "2", "3", "4", "5", "6", "7")
+SCHEMA_VERSION: Literal["8"] = "8"
+_READABLE_VERSIONS = ("1", "2", "3", "4", "5", "6", "7", "8")
 
 
 class _Contract(BaseModel):
@@ -24,9 +24,9 @@ class _Contract(BaseModel):
 
 
 class _Versioned(_Contract):
-    """Contrato de topo. Lê v1 a v6: as versões novas só acrescentam campos e valores."""
+    """Contrato de topo. Lê v1 a v7: as versões novas só acrescentam campos e valores."""
 
-    schema_version: Literal["7"] = SCHEMA_VERSION
+    schema_version: Literal["8"] = SCHEMA_VERSION
 
     @field_validator("schema_version", mode="before")
     @classmethod
@@ -140,6 +140,11 @@ class ColumnLoad(_Contract):
     my: float = Field(default=0.0, description="Momento de cálculo em torno de y [N·mm]")
     hx: float = Field(default=0.0, description="Força horizontal de cálculo em x [N]")
     hy: float = Field(default=0.0, description="Força horizontal de cálculo em y [N]")
+    nk: float | None = Field(
+        default=None,
+        gt=0,
+        description="Força normal característica, sem γf [N]; só para Rk e rótulos (ADR-014)",
+    )
 
 
 class LoadCase(_Contract):

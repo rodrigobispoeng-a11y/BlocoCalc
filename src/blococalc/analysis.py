@@ -47,6 +47,7 @@ from blococalc.schemas import (
     Cap,
     Check,
     CheckStatus,
+    ColumnLoad,
     DetailingInput,
     FemField,
     GeometryInput,
@@ -675,6 +676,36 @@ def refresh_project(project: Project) -> tuple[Project, tuple[str, ...]]:
         updates["fem_result"] = None
         warnings.append(f"Resultado do MEF salvo {reason}; descartado, rode o MEF de novo.")
     return project.model_copy(update=updates), tuple(warnings)
+
+
+def characteristic_reactions(project: Project, case_id: str) -> tuple[PileReaction, ...] | None:
+    """Rk de um caso pelo M1 com Nk no lugar de Fd (ADR-014); None sem Nk em algum pilar.
+
+    Premissas: momentos e forças horizontais de cada pilar reduzidos na razão Nk/Fd (o mesmo γf
+    para todos os esforços do pilar); peso próprio da D7 sobre Nk; sem γn, que é só de cálculo.
+    """
+    loads = project.loads
+    case = next((c for c in loads.cases if c.id == case_id), None)
+    if case is None:
+        raise ValueError(f"Caso de cálculo {case_id} não existe no projeto.")
+    scaled: list[ColumnLoad] = []
+    for load in case.column_loads:
+        if load.nk is None:
+            return None
+        if load.n <= 0:
+            raise ValueError(f"Nk do pilar {load.column_id} exige Fd de compressão no caso.")
+        ratio = load.nk / load.n
+        scaled.append(
+            load.model_copy(
+                update={"n": load.nk, "mx": load.mx * ratio, "my": load.my * ratio,
+                        "hx": load.hx * ratio, "hy": load.hy * ratio}
+            )
+        )  # fmt: skip
+    characteristic = case.model_copy(update={"column_loads": tuple(scaled)})
+    self_weight = (
+        SELF_WEIGHT_RATIO * sum(load.n for load in scaled) if loads.include_cap_self_weight else 0.0
+    )
+    return rigid_cap_reactions(project.geometry, characteristic, self_weight)
 
 
 def strut_tie_layout(project: Project, case_id: str) -> StrutTieLayout | None:
