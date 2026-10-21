@@ -14,6 +14,7 @@ from scipy.interpolate import LinearNDInterpolator
 
 from blococalc.fem.ccx import FemResult
 from blococalc.fem.mesh import CapMesh, FloatArray
+from blococalc.schemas import FemField
 
 _CELLS = 10  # pontos por direção nas médias de volume
 
@@ -23,23 +24,40 @@ class StressField:
 
     def __init__(self, mesh: CapMesh, result: FemResult) -> None:
         s = result.stresses
-        tensors = np.stack(
-            [
-                np.stack([s[:, 0], s[:, 3], s[:, 5]], axis=1),
-                np.stack([s[:, 3], s[:, 1], s[:, 4]], axis=1),
-                np.stack([s[:, 5], s[:, 4], s[:, 2]], axis=1),
-            ],
-            axis=1,
-        )
-        sigma3 = np.linalg.eigvalsh(tensors)[:, 0]
         self._interpolate = LinearNDInterpolator(
-            mesh.nodes, np.column_stack([s[:, 0], s[:, 1], sigma3])
+            mesh.nodes, np.column_stack([s[:, 0], s[:, 1], minimum_principal(s)])
         )
 
     def __call__(self, points: FloatArray) -> FloatArray:
         """(k, 3) colunas σxx, σyy e σ3 [MPa]; NaN fora do bloco."""
         values: FloatArray = self._interpolate(points)
         return values
+
+
+def minimum_principal(stresses: FloatArray) -> FloatArray:
+    """σ3, a menor tensão principal de cada linha xx, yy, zz, xy, yz, zx [MPa]."""
+    s = stresses
+    tensors = np.stack(
+        [
+            np.stack([s[:, 0], s[:, 3], s[:, 5]], axis=1),
+            np.stack([s[:, 3], s[:, 1], s[:, 4]], axis=1),
+            np.stack([s[:, 5], s[:, 4], s[:, 2]], axis=1),
+        ],
+        axis=1,
+    )
+    sigma3: FloatArray = np.linalg.eigvalsh(tensors)[:, 0]
+    return sigma3
+
+
+def fem_field(mesh: CapMesh, result: FemResult, case_id: str) -> FemField:
+    """Contrato do campo de um caso para a aba 3D (ADR-012)."""
+    return FemField(
+        case_id=case_id,
+        nodes=tuple(mesh.nodes.ravel().tolist()),
+        tetrahedra=tuple(mesh.tets.ravel().tolist()),
+        displacements=tuple(result.displacements.ravel().tolist()),
+        sigma3=tuple(minimum_principal(result.stresses).tolist()),
+    )
 
 
 def pile_reactions(
