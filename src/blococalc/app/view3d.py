@@ -1,5 +1,6 @@
 """Aba 3D: bloco, estacas e modelo de bielas e tirantes de um caso (ADR-006), ou o bloco
-pintado pela compressão do MEF quando ele rodou nesta sessão (ADR-012).
+pintado pela compressão do MEF quando ele rodou nesta sessão (ADR-012), com cortes,
+opacidade, deformada, topo da escala e valor no ponto clicado (ADR-013).
 
 A cena vem pronta de `blococalc.viz.scene`; aqui só se escolhe o caso e se desenha. Sem
 PyVista instalado ou sem OpenGL, a aba mostra o motivo e o resto da tela segue funcionando.
@@ -10,12 +11,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -39,6 +44,7 @@ class Plotter(Protocol):
     def view_xy(self) -> None: ...
     def view_xz(self) -> None: ...
     def view_yz(self) -> None: ...
+    def enable_point_picking(self, callback: Callable[[Any], None], **options: Any) -> Any: ...
 
 
 PlotterFactory = Callable[[QWidget], tuple[QWidget, Plotter]]
@@ -74,6 +80,8 @@ class View3D(QWidget):
         self.display_box.currentTextChanged.connect(self._draw)
         self.note = QLabel(_NO_RESULT)
         self.note.setWordWrap(True)
+        self.probe = QLabel()
+        self.tools = self._build_tools()
         self.plotter: Plotter | None = None
         layout = QVBoxLayout(self)
         bar = QHBoxLayout()
@@ -101,9 +109,73 @@ class View3D(QWidget):
             button.clicked.connect(action)
             bar.addWidget(button)
             self.view_buttons[label] = button
+        plotter.enable_point_picking(
+            self._picked, left_clicking=True, show_message=False, show_point=True
+        )
         layout.addLayout(bar)
+        layout.addWidget(self.tools)
         layout.addWidget(widget, 1)
+        layout.addWidget(self.probe)
         layout.addWidget(self.note)
+
+    def _build_tools(self) -> QWidget:
+        """Controles do modo "tensões do MEF" (ADR-013); mudar um deles só refaz a cena."""
+        tools = QWidget()
+        row = QHBoxLayout(tools)
+        row.setContentsMargins(0, 0, 0, 0)
+        self.cuts: dict[str, tuple[QCheckBox, QSlider]] = {}
+        for axis in ("x", "y"):
+            box, slider = QCheckBox(f"Corte {axis}"), QSlider(Qt.Orientation.Horizontal)
+            slider.setRange(0, 100)  # % da face negativa à positiva do bloco
+            slider.setValue(50)
+            slider.setToolTip("Posição do plano: retira a parte do bloco além dele.")
+            box.toggled.connect(self._redraw)
+            slider.valueChanged.connect(self._redraw)
+            row.addWidget(box)
+            row.addWidget(slider, 1)
+            self.cuts[axis] = (box, slider)
+        self.opacity = QSlider(Qt.Orientation.Horizontal)
+        self.opacity.setRange(10, 100)
+        self.opacity.setValue(100)
+        self.opacity.valueChanged.connect(self._redraw)
+        self.deformation = QDoubleSpinBox()
+        self.deformation.setRange(0.0, 10000.0)
+        self.deformation.setSingleStep(100.0)
+        self.deformation.setDecimals(0)
+        self.deformation.setSpecialValueText("sem")
+        self.deformation.valueChanged.connect(self._redraw)
+        self.scale_max = QDoubleSpinBox()
+        self.scale_max.setRange(0.0, 200.0)
+        self.scale_max.setDecimals(1)
+        self.scale_max.setSpecialValueText("pico")
+        self.scale_max.setToolTip("Topo das faixas de cor; acima dele a cor satura.")
+        self.scale_max.valueChanged.connect(self._redraw)
+        for label, control, stretch in (
+            ("Opacidade", self.opacity, 1),
+            ("Deformada ×", self.deformation, 0),
+            ("Escala até [MPa]", self.scale_max, 0),
+        ):
+            row.addWidget(QLabel(label))
+            row.addWidget(control, stretch)
+        tools.setHidden(True)
+        return tools
+
+    def stress_view(self) -> Any:
+        """`viz.scene.StressView` com os controles da barra, no bloco do campo mostrado."""
+        from blococalc.viz.scene import StressView  # noqa: PLC0415 - extra opcional `viz`
+
+        cap = self.fem_project.geometry.cap if self.fem_project is not None else None
+        cut: dict[str, float | None] = {}
+        for axis, (box, slider) in self.cuts.items():
+            size = 0.0 if cap is None else cap.lx if axis == "x" else cap.ly
+            cut[axis] = size * (slider.value() / 100.0 - 0.5) if box.isChecked() else None
+        return StressView(
+            cut_x=cut["x"],
+            cut_y=cut["y"],
+            opacity=self.opacity.value() / 100.0,
+            deformation=self.deformation.value(),
+            scale_max=self.scale_max.value() or None,
+        )
 
     @property
     def available(self) -> bool:
@@ -135,17 +207,24 @@ class View3D(QWidget):
         self.display_box.blockSignals(False)
         self.show_project(self.project)
 
-    def _draw(self, *_: object) -> None:
+    def _redraw(self, *_: object) -> None:
+        """Controle da barra mudou: refaz a cena sem mexer na câmera."""
+        self._draw(reset_camera=False)
+
+    def _draw(self, *_: object, reset_camera: bool = True) -> None:
         if self.plotter is not None:
             self.plotter.clear()
         self.scene = None
+        self.probe.clear()
+        stresses = self.display_box.currentText() == STRESSES and self.fem_project is not None
+        self.tools.setHidden(not stresses)
         try:
             from blococalc.viz import scene  # noqa: PLC0415 - extra opcional `viz`
         except ImportError:  # pragma: no cover - o CI instala o extra `viz`
             self._tell('Visualização 3D indisponível: instale o extra ".[viz]".')
             return
-        if self.display_box.currentText() == STRESSES and self.fem_project is not None:
-            self._draw_stresses(self.fem_project, self.case_box.currentText())
+        if stresses and self.fem_project is not None:
+            self._draw_stresses(self.fem_project, self.case_box.currentText(), reset_camera)
             return
         project, case_id = self.project, self.case_box.currentText()
         if project is None or project.result is None or not case_id:
@@ -160,26 +239,45 @@ class View3D(QWidget):
         reactions = [r for r in project.result.reactions if r.case_id == case_id]
         self.scene = scene.cap_scene(project.geometry, reactions, layout)
         self._tell(message)
-        self._paint()
+        self._paint(reset_camera)
 
-    def _draw_stresses(self, project: Project, case_id: str) -> None:
+    def _draw_stresses(self, project: Project, case_id: str, reset_camera: bool) -> None:
         from blococalc.viz.scene import stress_scene  # noqa: PLC0415 - extra opcional `viz`
 
         field = self.fields.get(case_id)
         if field is None:
             self._tell(_NO_FIELD.format(case=case_id))
             return
-        self.scene = stress_scene(project.geometry, field)
-        self._tell(_stress_note(case_id, self.scene.peak, project.materials))
-        self._paint()
+        view = self.stress_view()
+        self.scene = stress_scene(project.geometry, field, view)
+        note = _stress_note(case_id, self.scene.peak, project.materials)
+        if view.deformation:
+            note += (
+                f" Deformada ampliada {view.deformation:.0f} vezes; deslocamento máximo real "
+                f"{self.scene.displacement:.3f} mm."
+            )
+        self._tell(note)
+        self._paint(reset_camera)
 
-    def _paint(self) -> None:
+    def _paint(self, reset_camera: bool) -> None:
         if self.plotter is None or self.scene is None:
             return
         from blococalc.viz.scene import draw  # noqa: PLC0415 - extra opcional `viz`
 
         draw(self.plotter, self.scene)
-        self.plotter.view_isometric()
+        if reset_camera:
+            self.plotter.view_isometric()
+
+    def _picked(self, point: Any) -> None:
+        """Clique sobre o desenho: valor do MEF no nó mais próximo (ADR-013, item 5)."""
+        if self.scene is None or self.display_box.currentText() != STRESSES:
+            self.probe.clear()
+            return
+        from blococalc.viz.scene import value_at  # noqa: PLC0415 - extra opcional `viz`
+
+        x, y, z = (float(c) for c in point)
+        probed = value_at(self.scene, (x, y, z))
+        self.probe.setText("" if probed is None else f"Ponto clicado: {probed.text()}")
 
     def _tell(self, message: str) -> None:
         """Sem desenho, a nota continua explicando por que a aba está indisponível."""
