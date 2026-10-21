@@ -102,6 +102,17 @@ def test_pile_table_shows_stiffness() -> None:
     assert html.count("<td>rígida</td>") == 3
 
 
+def test_load_table_shows_nk_only_when_given() -> None:
+    # ADR-014: coluna Nk opcional; sem Nk em nenhum pilar, o memorial fica como antes.
+    assert "Nk [kN]" not in calculation_report(project(), ISSUED)
+    case = LOADS.cases[0]
+    loads = (case.column_loads[0].model_copy(update={"nk": 700e3}),)
+    with_nk = LOADS.model_copy(update={"cases": (case.model_copy(update={"column_loads": loads}),)})
+    html = calculation_report(project(loads=with_nk), ISSUED)
+    assert "Nk [kN]" in html
+    assert "<td>700.00</td>" in html
+
+
 def test_report_embeds_form_and_model_drawings() -> None:
     # ADR-008: forma na seção 1 e o modelo de cada caso na seção 3, como SVG embutido.
     saved = project()

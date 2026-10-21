@@ -94,6 +94,8 @@ def _inputs(project: Project, drawings: bool) -> list[str]:
     g, m, loads, d = project.geometry, project.materials, project.loads, project.detailing
     cap = g.cap
     tie_height = tie_axis_height(project)
+    # ADR-014: a coluna Nk só aparece quando algum pilar tem a carga característica.
+    characteristic = any(c.nk is not None for case in loads.cases for c in case.column_loads)
     forms = [
         "<h3>Forma (cotas em cm)</h3>",
         _figure(form_plan(g), _PLAN_WIDTH, "Planta de forma"),
@@ -155,6 +157,7 @@ def _inputs(project: Project, drawings: bool) -> list[str]:
                 "Myd [kN·m]",
                 "Hxd [kN]",
                 "Hyd [kN]",
+                *(("Nk [kN]",) if characteristic else ()),
             ),
             [
                 (
@@ -166,6 +169,7 @@ def _inputs(project: Project, drawings: bool) -> list[str]:
                     _n(c.my / KNM, 2),
                     _n(c.hx / KN, 2),
                     _n(c.hy / KN, 2),
+                    *((("—" if c.nk is None else _n(c.nk / KN, 2)),) if characteristic else ()),
                 )
                 for case in loads.cases
                 for c in case.column_loads

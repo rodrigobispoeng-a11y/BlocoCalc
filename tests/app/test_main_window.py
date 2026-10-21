@@ -423,7 +423,7 @@ def test_all_contract_fields_are_editable(app: object) -> None:
     window.columns.setRowCount(0)
     _append_row(window.columns, ("P1", 0, 0, 400, 400, 1.5))
     window.loads.setRowCount(0)
-    _append_row(window.loads, ("ELU1", "P1", 900, 0, 0, 0, 0, "especial"))
+    _append_row(window.loads, ("ELU1", "P1", 900, 0, 0, 0, 0, "especial", 650))
     window.materials["gamma_c"].setValue(1.2)
     window.materials["gamma_s"].setValue(1.0)
     window.hooked.setChecked(False)
@@ -433,6 +433,7 @@ def test_all_contract_fields_are_editable(app: object) -> None:
     assert [p.shape for p in geometry.piles] == [PileShape.SQUARE, PileShape.CIRCULAR]
     assert geometry.columns[0].reinforcement_ratio == pytest.approx(0.015)
     assert loads.cases[0].combination is CombinationType.SPECIAL
+    assert loads.cases[0].column_loads[0].nk == pytest.approx(650e3)  # ADR-014
     assert not loads.include_cap_self_weight
     assert (materials.gamma_c, materials.gamma_s) == (1.2, 1.0)
     assert not detailing.hooked
