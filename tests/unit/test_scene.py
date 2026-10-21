@@ -11,6 +11,7 @@ import pyvista as pv
 from blococalc import analysis
 from blococalc.analysis import analyze, strut_tie_layout
 from blococalc.schemas import (
+    Column,
     ColumnLoad,
     DetailingInput,
     LayoutMemberKind,
@@ -37,6 +38,7 @@ from blococalc.viz.scene import (
     TF,
     TIE_COLOR,
     CapScene,
+    SceneLabel,
     StressView,
     TrussLoads,
     cap_scene,
@@ -45,7 +47,7 @@ from blococalc.viz.scene import (
     stress_scene,
     value_at,
 )
-from tests.factories import box_field, four_pile_cap, quadratic_tetra
+from tests.factories import box_field, four_pile_cap, grid_cap, quadratic_tetra
 
 GEOMETRY = four_pile_cap()
 REACTIONS = tuple(
@@ -343,16 +345,77 @@ def texts(scene: CapScene) -> list[str]:
     return [label.text for label in scene.labels]
 
 
-def test_every_member_gets_its_design_force_in_its_color() -> None:
+def member_labels(scene: CapScene) -> list[SceneLabel]:
+    return [label for label in scene.labels if label.color in (STRUT_COLOR, TIE_COLOR)]
+
+
+def multiplicity(label: SceneLabel) -> int:
+    text = label.text
+    return int(text[text.index("(x") + 2 : -1]) if text.endswith(")") else 1
+
+
+def test_every_member_force_is_labeled_once_per_symmetric_group() -> None:
+    # B1 é simétrico nos dois eixos: as 4 bielas viram um rótulo "(x4)" e os tirantes em x e
+    # em y um "(x2)" cada; a soma das multiplicidades é o número de barras.
     scene, layout = b1_labels()
-    members = [label for label in scene.labels if label.color in (STRUT_COLOR, TIE_COLOR)]
-    assert len(members) == len(layout.members)
+    labels = member_labels(scene)
+    assert sum(multiplicity(label) for label in labels) == len(layout.members)
     strut = next(m for m in layout.members if m.kind is LayoutMemberKind.STRUT)
-    assert f"{strut.force_d / 1e3:.1f} kN" in texts(scene)
+    assert f"{strut.force_d / 1e3:.1f} kN (x4)" in texts(scene)
+    # O rótulo da biela fica a 0,65 do comprimento a partir do nó da estaca, na mais à frente.
     nodes = {n.id: n for n in layout.nodes}
-    a, b = nodes[strut.start], nodes[strut.end]
-    middle = ((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2)
-    assert any(label.position == pytest.approx(middle) for label in members)
+    points = []
+    for member in layout.members:
+        if member.kind is LayoutMemberKind.STRUT:
+            low, high = sorted((nodes[member.start], nodes[member.end]), key=lambda n: n.z)
+            points.append(
+                tuple(
+                    a + 0.65 * (b - a)
+                    for a, b in ((low.x, high.x), (low.y, high.y), (low.z, high.z))
+                )
+            )
+    front = max(points, key=lambda m: m[0] - m[1])
+    shown = next(label for label in labels if label.color == STRUT_COLOR)
+    assert shown.position == pytest.approx(front)
+
+
+def test_members_without_a_symmetric_twin_keep_their_own_label() -> None:
+    # Dois pilares de cargas diferentes em x: as bielas só se repetem no espelho em y.
+    base = grid_cap(4, 2)
+    geometry = base.model_copy(
+        update={
+            "columns": (
+                Column(id="P1", x=-1500.0, y=0.0, bx=400.0, by=800.0),
+                Column(id="P2", x=1500.0, y=0.0, bx=800.0, by=800.0),
+            )
+        }
+    )
+    case = LoadCase(
+        id="C1",
+        column_loads=(
+            ColumnLoad(column_id="P1", n=4000e3),
+            ColumnLoad(column_id="P2", n=5700e3),
+        ),
+    )
+    loads = LoadsInput(cases=(case,))
+    materials = MaterialsInput(fck=30.0)
+    result = analyze(geometry, materials, loads, DetailingInput())
+    project = Project(
+        name="8E2P", geometry=geometry, materials=materials, loads=loads, result=result
+    )
+    layout = strut_tie_layout(project, "C1")
+    assert layout is not None
+    truss = TrussLoads(case, loads.gamma_n, result.reactions)
+    scene = labeled(cap_scene(geometry, result.reactions, layout), geometry, truss, layout)
+    labels = member_labels(scene)
+    assert sum(multiplicity(label) for label in labels) == len(layout.members)
+    assert len(labels) < len(layout.members)
+    # Bielas e tirantes em x têm o gêmeo do outro lado de y = 0 e ficam do lado da frente; os
+    # tirantes em y cruzam y = 0 e não têm gêmeo, porque as forças em x diferem.
+    for label in labels:
+        assert multiplicity(label) == (1 if label.position[1] == 0.0 else 2)
+        assert label.position[1] <= 0.0
+    assert len({label.text for label in labels}) == len(labels)
 
 
 def test_column_and_pile_labels_show_characteristic_and_design_values() -> None:
