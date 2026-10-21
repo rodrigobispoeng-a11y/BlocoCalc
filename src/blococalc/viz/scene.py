@@ -57,6 +57,8 @@ UNITS = {"kN": 1e3, "tf": TF}
 LABEL_COLOR: Color = (0.15, 0.15, 0.15)
 DIMENSION_COLOR: Color = (0.10, 0.10, 0.10)
 _DIMENSION_OFFSET = 0.08  # linhas de cota fora do bloco, fração do menor lado
+# Posição do rótulo ao longo da biela, a partir do nó da estaca: acima do meio, fora do plano
+_STRUT_LABEL_AT = 0.65
 
 
 @dataclass(frozen=True)
@@ -270,18 +272,7 @@ def labeled(
     cap = geometry.cap
     labels: list[SceneLabel] = []
     if layout is not None:
-        nodes = {n.id: (n.x, n.y, n.z) for n in layout.nodes}
-        for member in layout.members:
-            start, end = nodes[member.start], nodes[member.end]
-            middle = (
-                (start[0] + end[0]) / 2,
-                (start[1] + end[1]) / 2,
-                (start[2] + end[2]) / 2,
-            )
-            strut = member.kind is LayoutMemberKind.STRUT
-            labels.append(
-                SceneLabel(middle, force(member.force_d), STRUT_COLOR if strut else TIE_COLOR)
-            )
+        labels += _member_labels(geometry, layout, force)
     columns = {c.id: c for c in geometry.columns}
     for load in loads.case.column_loads:
         column = columns[load.column_id]
@@ -306,6 +297,34 @@ def labeled(
         items=(*scene.items, *dimensions),
         labels=(*scene.labels, *labels, *dimension_labels),
     )
+
+
+def _member_labels(
+    geometry: GeometryInput, layout: StrutTieLayout, force: Callable[[float], str]
+) -> list[SceneLabel]:
+    """Força de cálculo de cada barra, na cor da barra: no meio do tirante e, na biela, a
+    `_STRUT_LABEL_AT` do comprimento a partir do nó de baixo, longe do meio dos tirantes. Barras
+    simétricas em relação aos eixos do estaqueamento com a mesma força levam um só rótulo,
+    "(xn)", na barra mais à frente na vista isométrica (+x, −y), para os textos não se
+    sobreporem."""
+    xc = sum(p.x for p in geometry.piles) / len(geometry.piles)
+    yc = sum(p.y for p in geometry.piles) / len(geometry.piles)
+    nodes = {n.id: (n.x, n.y, n.z) for n in layout.nodes}
+    groups: dict[tuple[LayoutMemberKind, str, int, int, int], list[tuple[float, ...]]] = {}
+    for member in layout.members:
+        low, high = sorted((nodes[member.start], nodes[member.end]), key=lambda n: n[2])
+        at = _STRUT_LABEL_AT if member.kind is LayoutMemberKind.STRUT else 0.5
+        x, y, z = (a + at * (b - a) for a, b in zip(low, high, strict=True))
+        folded = (round(xc + abs(x - xc)), round(yc - abs(y - yc)), round(z))
+        key = (member.kind, force(member.force_d), *folded)
+        groups.setdefault(key, []).append((x, y, z))
+    labels = []
+    for (kind, text, fx, fy, _), points in groups.items():
+        x, y, z = min(points, key=lambda m: abs(m[0] - fx) + abs(m[1] - fy))
+        count = f" (x{len(points)})" if len(points) > 1 else ""
+        color = STRUT_COLOR if kind is LayoutMemberKind.STRUT else TIE_COLOR
+        labels.append(SceneLabel((x, y, z), f"{text}{count}", color))
+    return labels
 
 
 def _dimensions(
