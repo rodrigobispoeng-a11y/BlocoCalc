@@ -8,9 +8,12 @@ pytest.importorskip("pyvista")
 
 import pyvista as pv
 
-from blococalc.analysis import strut_tie_layout
+from blococalc import analysis
+from blococalc.analysis import analyze, strut_tie_layout
 from blococalc.schemas import (
     ColumnLoad,
+    DetailingInput,
+    LayoutMemberKind,
     LoadCase,
     LoadsInput,
     MaterialsInput,
@@ -25,14 +28,20 @@ from blococalc.viz.scene import (
     COMPRESSION,
     COMPRESSION_COLOR,
     CUT_OPACITY,
+    DIMENSION_COLOR,
+    LABEL_COLOR,
     NEUTRAL_COLOR,
     STRESS_BANDS,
     STRUT_COLOR,
     TENSION_COLOR,
+    TF,
     TIE_COLOR,
+    CapScene,
     StressView,
+    TrussLoads,
     cap_scene,
     draw,
+    labeled,
     stress_scene,
     value_at,
 )
@@ -176,9 +185,15 @@ def test_field_without_compression_keeps_a_valid_range() -> None:
 class RecordingPlotter:
     def __init__(self) -> None:
         self.calls: dict[str, dict[str, object]] = {}
+        self.texts: list[str] = []
 
     def add_mesh(self, mesh: object, **options: object) -> None:
         self.calls[str(options["name"])] = options
+
+    def add_point_labels(self, points: object, labels: object, **options: object) -> None:
+        assert isinstance(labels, list)
+        self.texts += labels
+        self.calls[str(options["name"])] = {"points": points, **options}
 
 
 def test_draw_paints_scalars_and_colors_the_rest() -> None:
@@ -297,3 +312,97 @@ def test_value_at_in_tension_says_so() -> None:
     assert probe is not None
     assert probe.compression == 0.0
     assert probe.text().startswith("σ3 = 0.50 MPa (tração)")
+
+
+# --------------------------------------------------------------------------------------
+# Rótulos da treliça (ADR-014)
+# --------------------------------------------------------------------------------------
+
+
+def b1_labels(unit: str = "kN", nk: float | None = 700e3) -> tuple[CapScene, StrutTieLayout]:
+    loads = LoadsInput(
+        cases=(LoadCase(id="C1", column_loads=(ColumnLoad(column_id="P1", n=980e3, nk=nk),)),)
+    )
+    materials = MaterialsInput(fck=35.0)
+    project = Project(
+        name="B1",
+        geometry=GEOMETRY,
+        materials=materials,
+        loads=loads,
+        result=analyze(GEOMETRY, materials, loads, DetailingInput()),
+    )
+    layout = strut_tie_layout(project, "C1")
+    assert layout is not None and project.result is not None
+    rk = analysis.characteristic_reactions(project, "C1")
+    truss = TrussLoads(loads.cases[0], loads.gamma_n, project.result.reactions, rk)
+    scene = cap_scene(GEOMETRY, project.result.reactions, layout)
+    return labeled(scene, GEOMETRY, truss, layout, unit), layout
+
+
+def texts(scene: CapScene) -> list[str]:
+    return [label.text for label in scene.labels]
+
+
+def test_every_member_gets_its_design_force_in_its_color() -> None:
+    scene, layout = b1_labels()
+    members = [label for label in scene.labels if label.color in (STRUT_COLOR, TIE_COLOR)]
+    assert len(members) == len(layout.members)
+    strut = next(m for m in layout.members if m.kind is LayoutMemberKind.STRUT)
+    assert f"{strut.force_d / 1e3:.1f} kN" in texts(scene)
+    nodes = {n.id: n for n in layout.nodes}
+    a, b = nodes[strut.start], nodes[strut.end]
+    middle = ((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2)
+    assert any(label.position == pytest.approx(middle) for label in members)
+
+
+def test_column_and_pile_labels_show_characteristic_and_design_values() -> None:
+    # B1: Fd = 980 kN, Nd = 1,2 × 980 = 1176 kN; Rd = 980 × 1,05 / 4 = 257,25 kN (D7);
+    # Rk = 700 × 1,05 / 4 = 183,75 kN.
+    scene, _ = b1_labels()
+    assert "P1\nNk = 700.0 kN\nFd = 980.0 kN\nNd = 1176.0 kN" in texts(scene)
+    assert "E1\nRk = 183.8 kN\nRd = 257.2 kN" in texts(scene)
+    without, _ = b1_labels(nk=None)
+    assert "P1\nFd = 980.0 kN\nNd = 1176.0 kN" in texts(without)
+    assert "E1\nRd = 257.2 kN" in texts(without)
+
+
+def test_forces_in_tf() -> None:
+    scene, _ = b1_labels("tf")
+    assert f"P1\nNk = {700e3 / TF:.1f} tf\nFd = 99.9 tf\nNd = 119.9 tf" in texts(scene)
+    with pytest.raises(ValueError, match="unidade"):
+        b1_labels("kgf")
+
+
+def test_dimensions_h_d_and_d_prime() -> None:
+    scene, layout = b1_labels()
+    d_prime = min(n.z for n in layout.nodes if n.id.startswith("estaca_"))
+    assert "h = 1000 mm" in texts(scene)
+    assert f"d' = {d_prime:.0f} mm" in texts(scene)
+    assert f"d = {1000.0 - d_prime:.0f} mm" in texts(scene)
+    line = scene.item("cota_d").mesh
+    assert line.bounds[4:6] == pytest.approx((d_prime, 1000.0))
+    assert line.bounds[0] > 1000.0  # fora do bloco, na aresta da frente da isométrica
+
+
+def test_flexible_cap_has_loads_reactions_and_h_only() -> None:
+    loads = TrussLoads(LoadCase(id="C1", column_loads=(ColumnLoad(column_id="P1", n=980e3),)),
+                       1.2, REACTIONS)  # fmt: skip
+    scene = labeled(cap_scene(GEOMETRY, REACTIONS, None), GEOMETRY, loads, None)
+    assert [t.split(" =")[0] for t in texts(scene) if " mm" in t] == ["h"]
+    assert {i.name for i in scene.items} >= {"cota_h"}
+    assert not any(i.name == "cota_d" for i in scene.items)
+
+
+def test_draw_groups_labels_by_color() -> None:
+    plotter = RecordingPlotter()
+    scene, _ = b1_labels()
+    draw(plotter, scene)
+    groups = {k: v for k, v in plotter.calls.items() if k.startswith("rotulos_")}
+    assert {v["text_color"] for v in groups.values()} == {
+        STRUT_COLOR,
+        TIE_COLOR,
+        LABEL_COLOR,
+        DIMENSION_COLOR,
+    }
+    assert sorted(plotter.texts) == sorted(texts(scene))
+    assert all(v["always_visible"] for v in groups.values())
