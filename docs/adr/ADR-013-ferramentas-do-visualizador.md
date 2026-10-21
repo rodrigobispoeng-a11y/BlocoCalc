@@ -1,6 +1,6 @@
 # ADR-013 — Ferramentas do visualizador de tensões do MEF
 
-- Status: proposta
+- Status: aceita (aprovada por Rodrigo em 21/10/2026)
 - Contexto: a ADR-012 pinta o bloco pela compressão do MEF na aba 3D. Visto de fora, porém, o
   bloco fica quase todo na menor faixa: as bielas correm por dentro e só aparecem num corte, e o
   pico sob o pilar (concentração do modelo elástico) estica a escala. O vídeo de referência
