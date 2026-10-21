@@ -608,6 +608,9 @@ class FakePlotter(QWidget):
     def add_mesh(self, mesh: Any, **options: Any) -> None:
         self.meshes[options["name"]] = {"mesh": mesh, **options}
 
+    def add_point_labels(self, points: Any, labels: Any, **options: Any) -> None:
+        self.meshes[options["name"]] = {"points": points, "labels": labels, **options}
+
     def clear(self) -> None:
         self.meshes.clear()
         self.cleared += 1

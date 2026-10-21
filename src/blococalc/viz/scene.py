@@ -18,6 +18,7 @@ from blococalc.schemas import (
     FemField,
     GeometryInput,
     LayoutMemberKind,
+    LoadCase,
     PileReaction,
     PileShape,
     StrutTieLayout,
@@ -51,6 +52,11 @@ SIGMA3 = "sigma3_MPa"  # σ3 com sinal, para o valor no ponto (ADR-013)
 DISPLACEMENT = "deslocamento_mm"  # vetor do MEF, para a deformada
 POSITION = "posicao_mm"  # coordenada original do nó, que a deformada não move
 CUT_OPACITY = 0.35  # pilares e estacas quando o bloco está cortado
+TF = 9806.65  # N em 1 tf
+UNITS = {"kN": 1e3, "tf": TF}
+LABEL_COLOR: Color = (0.15, 0.15, 0.15)
+DIMENSION_COLOR: Color = (0.10, 0.10, 0.10)
+_DIMENSION_OFFSET = 0.08  # linhas de cota fora do bloco, fração do menor lado
 
 
 @dataclass(frozen=True)
@@ -66,11 +72,21 @@ class SceneItem:
 
 
 @dataclass(frozen=True)
+class SceneLabel:
+    """Texto que sempre encara a câmera, preso a um ponto da cena [mm] (ADR-014)."""
+
+    position: tuple[float, float, float]
+    text: str
+    color: Color = LABEL_COLOR
+
+
+@dataclass(frozen=True)
 class CapScene:
     items: tuple[SceneItem, ...]
     legend: tuple[tuple[str, Color], ...] = LEGEND
     peak: float = 0.0  # maior valor pintado (compressão máxima no campo do MEF) [MPa]
     displacement: float = 0.0  # maior deslocamento real do campo do MEF [mm]
+    labels: tuple[SceneLabel, ...] = ()
 
     def item(self, name: str) -> SceneItem:
         for item in self.items:
@@ -226,8 +242,98 @@ def value_at(scene: CapScene, point: tuple[float, float, float]) -> ProbedValue 
     )
 
 
+@dataclass(frozen=True)
+class TrussLoads:
+    """O que os rótulos da treliça mostram de um caso (ADR-014); forças em N."""
+
+    case: LoadCase
+    gamma_n: float
+    reactions: Sequence[PileReaction]  # Rd do caso
+    characteristic: Sequence[PileReaction] | None = None  # Rk, quando há Nk
+
+
+def labeled(
+    scene: CapScene,
+    geometry: GeometryInput,
+    loads: TrussLoads,
+    layout: StrutTieLayout | None,
+    unit: str = "kN",
+) -> CapScene:
+    """Cena com a força de cada barra, Nk/Fd/Nd nos pilares, Rk/Rd nas estacas e as cotas h,
+    d e d' (ADR-014). `unit` é "kN" ou "tf"; as cotas ficam em mm. Nd = γn·Fd (D3)."""
+    if unit not in UNITS:
+        raise ValueError(f"unidade {unit} desconhecida; use kN ou tf")
+
+    def force(value: float) -> str:
+        return f"{value / UNITS[unit]:.1f} {unit}"
+
+    cap = geometry.cap
+    labels: list[SceneLabel] = []
+    if layout is not None:
+        nodes = {n.id: (n.x, n.y, n.z) for n in layout.nodes}
+        for member in layout.members:
+            start, end = nodes[member.start], nodes[member.end]
+            middle = (
+                (start[0] + end[0]) / 2,
+                (start[1] + end[1]) / 2,
+                (start[2] + end[2]) / 2,
+            )
+            strut = member.kind is LayoutMemberKind.STRUT
+            labels.append(
+                SceneLabel(middle, force(member.force_d), STRUT_COLOR if strut else TIE_COLOR)
+            )
+    columns = {c.id: c for c in geometry.columns}
+    for load in loads.case.column_loads:
+        column = columns[load.column_id]
+        top = cap.h + _COLUMN_LENGTH * max(column.bx, column.by)
+        lines = [column.id]
+        if load.nk is not None:
+            lines.append(f"Nk = {force(load.nk)}")
+        lines += [f"Fd = {force(load.n)}", f"Nd = {force(loads.gamma_n * load.n)}"]
+        labels.append(SceneLabel((column.x, column.y, top), "\n".join(lines)))
+    rk = {r.pile_id: r.force for r in loads.characteristic or ()}
+    rd = {r.pile_id: r.force for r in loads.reactions}
+    for pile in geometry.piles:
+        lines = [pile.id]
+        if pile.id in rk:
+            lines.append(f"Rk = {force(rk[pile.id])}")
+        if pile.id in rd:
+            lines.append(f"Rd = {force(rd[pile.id])}")
+        labels.append(SceneLabel((pile.x, pile.y, -_PILE_LENGTH * cap.h), "\n".join(lines)))
+    dimensions, dimension_labels = _dimensions(geometry, layout)
+    return replace(
+        scene,
+        items=(*scene.items, *dimensions),
+        labels=(*scene.labels, *labels, *dimension_labels),
+    )
+
+
+def _dimensions(
+    geometry: GeometryInput, layout: StrutTieLayout | None
+) -> tuple[list[SceneItem], list[SceneLabel]]:
+    """Cotas verticais fora da aresta (+x, −y), que fica de frente na vista isométrica: h mais
+    afastada, com o texto no topo; com a treliça, d' (nó da estaca) e d = h − d' por dentro."""
+    cap = geometry.cap
+    offset = _DIMENSION_OFFSET * min(cap.lx, cap.ly)
+    x, y = cap.lx / 2 + offset, -cap.ly / 2 - offset
+    spans = [("cota_h", "h", 0.0, cap.h, 2.0, cap.h)]
+    if layout is not None:
+        bottom = min(n.z for n in layout.nodes if n.id.startswith("estaca_"))
+        spans += [
+            ("cota_dlinha", "d'", 0.0, bottom, 1.0, bottom / 2),
+            ("cota_d", "d", bottom, cap.h, 1.0, (bottom + cap.h) / 2),
+        ]
+    items, labels = [], []
+    for name, symbol, low, high, step, at in spans:
+        u = x + (step - 1.0) * offset
+        items.append(SceneItem(name, pv.Line((u, y, low), (u, y, high)), DIMENSION_COLOR))
+        labels.append(SceneLabel((u, y, at), f"{symbol} = {high - low:.0f} mm", DIMENSION_COLOR))
+    return items, labels
+
+
 class Plotter(Protocol):
     def add_mesh(self, mesh: pv.DataSet, **options: object) -> object: ...
+    def add_point_labels(self, points: object, labels: object, **options: object) -> object: ...
 
 
 def draw(plotter: Plotter, scene: CapScene) -> None:
@@ -245,6 +351,19 @@ def draw(plotter: Plotter, scene: CapScene) -> None:
         else:
             options["color"] = item.color
         plotter.add_mesh(item.mesh, **options)
+    colors = list(dict.fromkeys(label.color for label in scene.labels))
+    for k, color in enumerate(colors):
+        group = [label for label in scene.labels if label.color == color]
+        plotter.add_point_labels(
+            [label.position for label in group],
+            [label.text for label in group],
+            name=f"rotulos_{k}",
+            text_color=color,
+            font_size=14,
+            show_points=False,
+            shape_opacity=0.6,
+            always_visible=True,
+        )
 
 
 def _columns_and_piles(
