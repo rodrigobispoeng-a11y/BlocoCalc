@@ -854,3 +854,51 @@ def test_clicking_shows_the_value_at_the_nearest_node(app: object) -> None:
     view.display_box.setCurrentText(view3d.MODEL)
     plotter.picking["callback"]((0.0, 0.0, 0.0))
     assert view.probe.text() == ""
+
+
+def label_texts(plotter: FakePlotter) -> list[str]:
+    return [t for k, v in plotter.meshes.items() if k.startswith("rotulos_") for t in v["labels"]]
+
+
+def test_3d_model_has_labels_in_kn_or_tf_without_moving_the_camera(app: object) -> None:
+    # ADR-014: B1 com Fd = 980 kN, Nd = 1,2 × 980 = 1176 kN, Rd = 257,25 kN (D7).
+    view = View3D(fake_factory)
+    plotter = view.plotter
+    assert isinstance(plotter, FakePlotter)
+    project = calculated(cases=1)
+    view.show_project(project)
+    texts = label_texts(plotter)
+    assert "P1\nFd = 980.0 kN\nNd = 1176.0 kN" in texts
+    assert "E1\nRd = 257.2 kN" in texts
+    assert "cota_d" in plotter.meshes
+    views = len(plotter.views)
+    view.tf_box.setChecked(True)
+    assert "P1\nFd = 99.9 tf\nNd = 119.9 tf" in label_texts(plotter)
+    view.labels_box.setChecked(False)
+    assert label_texts(plotter) == []
+    assert "cota_d" not in plotter.meshes
+    assert len(plotter.views) == views
+
+
+def test_3d_model_shows_rk_when_every_column_has_nk(app: object) -> None:
+    project = calculated(cases=1)
+    case = project.loads.cases[0]
+    loads = (case.column_loads[0].model_copy(update={"nk": 700e3}),)
+    with_nk = project.model_copy(
+        update={
+            "loads": project.loads.model_copy(
+                update={"cases": (case.model_copy(update={"column_loads": loads}),)}
+            )
+        }
+    )
+    view = View3D(fake_factory)
+    assert isinstance(view.plotter, FakePlotter)
+    view.show_project(with_nk)
+    assert "E1\nRk = 183.8 kN\nRd = 257.2 kN" in label_texts(view.plotter)
+
+
+def test_label_boxes_hide_with_stresses(app: object) -> None:
+    view, _ = stress_view(calculated(cases=1))
+    assert view.labels_box.isHidden() and view.tf_box.isHidden()
+    view.display_box.setCurrentText(view3d.MODEL)
+    assert not view.labels_box.isHidden()
