@@ -24,16 +24,19 @@ from blococalc.viz.scene import (
     COLUMN_COLOR,
     COMPRESSION,
     COMPRESSION_COLOR,
+    CUT_OPACITY,
     NEUTRAL_COLOR,
     STRESS_BANDS,
     STRUT_COLOR,
     TENSION_COLOR,
     TIE_COLOR,
+    StressView,
     cap_scene,
     draw,
     stress_scene,
+    value_at,
 )
-from tests.factories import four_pile_cap, quadratic_tetra
+from tests.factories import box_field, four_pile_cap, quadratic_tetra
 
 GEOMETRY = four_pile_cap()
 REACTIONS = tuple(
@@ -190,3 +193,107 @@ def test_draw_paints_scalars_and_colors_the_rest() -> None:
     draw(plotter, cap_scene(GEOMETRY, REACTIONS, None))
     assert plotter.calls["bloco"]["opacity"] == CAP_OPACITY
     assert "scalars" not in plotter.calls["bloco"]
+
+
+# --------------------------------------------------------------------------------------
+# Ferramentas do visualizador (ADR-013)
+# --------------------------------------------------------------------------------------
+
+BOX = box_field(2000.0, 2000.0, 1000.0)  # B1: σ3 = −z/100, uz = −z/1000
+
+
+def painted(view: StressView) -> pv.DataSet:
+    return stress_scene(GEOMETRY, BOX, view).item("tensoes").mesh
+
+
+def test_box_field_is_a_valid_c3d10_mesh() -> None:
+    grid = painted(StressView())
+    assert grid.n_cells == 6 * 8
+    assert grid.volume == pytest.approx(2000.0 * 2000.0 * 1000.0)
+    assert grid.bounds[4:6] == pytest.approx((0.0, 1000.0))
+
+
+def test_cut_x_keeps_the_side_before_the_plane() -> None:
+    grid = painted(StressView(cut_x=500.0))
+    assert grid.bounds[0:2] == pytest.approx((-1000.0, 500.0))
+    assert grid.bounds[2:4] == pytest.approx((-1000.0, 1000.0))
+    assert grid.volume == pytest.approx(1500.0 * 2000.0 * 1000.0, rel=1e-6)
+
+
+def test_both_cuts_keep_the_corner() -> None:
+    scene = stress_scene(GEOMETRY, BOX, StressView(cut_x=0.0, cut_y=-200.0))
+    grid = scene.item("tensoes").mesh
+    assert grid.bounds[1] == pytest.approx(0.0)
+    assert grid.bounds[3] == pytest.approx(-200.0)
+    # O que não é cortado fica translúcido para mostrar a face cortada.
+    assert scene.item("pilar_P1").opacity == CUT_OPACITY
+    assert scene.item("estaca_E1").opacity == CUT_OPACITY
+    assert stress_scene(GEOMETRY, BOX).item("estaca_E1").opacity == 1.0
+
+
+def test_cut_face_shows_the_interior_values() -> None:
+    grid = painted(StressView(cut_x=0.0))
+    on_face = abs(grid.points[:, 0]) < 1e-6
+    assert on_face.sum() > 0
+    z = grid.points[on_face, 2]
+    assert grid.point_data[COMPRESSION][on_face] == pytest.approx(z / 100.0)
+
+
+def test_cut_beyond_the_block_keeps_everything_and_cut_before_it_empties() -> None:
+    assert painted(StressView(cut_x=5000.0)).n_cells == 48
+    scene = stress_scene(GEOMETRY, BOX, StressView(cut_x=-5000.0))
+    assert scene.item("tensoes").mesh.n_points == 0
+    assert scene.peak == pytest.approx(10.0)  # o pico é do caso, não do que sobrou
+
+
+def test_deformation_moves_nodes_after_the_cut_and_reports_the_real_displacement() -> None:
+    scene = stress_scene(GEOMETRY, BOX, StressView(cut_x=0.0, deformation=100.0))
+    grid = scene.item("tensoes").mesh
+    assert grid.bounds[1] == pytest.approx(0.0)  # corte na posição original
+    assert grid.bounds[5] == pytest.approx(1000.0 - 100.0 * 1.0)  # topo desce 100 × 1 mm
+    assert scene.displacement == pytest.approx(1.0)
+
+
+def test_scale_max_and_opacity() -> None:
+    scene = stress_scene(GEOMETRY, BOX, StressView(opacity=0.4, scale_max=5.0))
+    item = scene.item("tensoes")
+    assert item.clim == (0.0, 5.0)
+    assert item.opacity == 0.4
+    assert scene.peak == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize(
+    "view",
+    [{"opacity": 0.05}, {"opacity": 1.5}, {"scale_max": 0.0}, {"deformation": -1.0}],
+)
+def test_invalid_view_is_refused(view: dict[str, float]) -> None:
+    with pytest.raises(ValueError):
+        StressView(**view)
+
+
+def test_value_at_returns_the_nearest_node_in_original_position() -> None:
+    scene = stress_scene(GEOMETRY, BOX, StressView(deformation=100.0))
+    # Topo deformado está em z = 900; o clique ali acha o nó original do topo.
+    probe = value_at(scene, (1000.0, 1000.0, 905.0))
+    assert probe is not None
+    assert probe.position == pytest.approx((1000.0, 1000.0, 1000.0))
+    assert probe.sigma3 == pytest.approx(-10.0)
+    assert probe.compression == pytest.approx(10.0)
+    assert probe.displacement == pytest.approx(1.0)
+    assert probe.text() == (
+        "σ3 = -10.00 MPa (compressão 10.00 MPa), u = 1.000 mm em x = 1000, y = 1000, z = 1000 mm"
+    )
+
+
+def test_value_at_without_field_or_with_everything_cut() -> None:
+    assert value_at(cap_scene(GEOMETRY, REACTIONS, None), (0.0, 0.0, 0.0)) is None
+    empty = stress_scene(GEOMETRY, BOX, StressView(cut_x=-5000.0))
+    assert value_at(empty, (0.0, 0.0, 0.0)) is None
+
+
+def test_value_at_in_tension_says_so() -> None:
+    scene = stress_scene(GEOMETRY, quadratic_tetra((0.5,) * 10))
+    probe = value_at(scene, (0.0, 0.0, 0.0))
+    assert probe is not None
+    assert probe.compression == 0.0
+    assert probe.text().startswith("σ3 = 0.50 MPa (tração)")

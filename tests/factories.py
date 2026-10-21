@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 
 from blococalc.schemas import Cap, Column, FemField, GeometryInput, Pile, PileShape
@@ -159,4 +160,45 @@ def quadratic_tetra(sigma3: tuple[float, ...], case_id: str = "C1") -> FemField:
         tetrahedra=tuple(range(10)),
         displacements=(0.0,) * 30,
         sigma3=sigma3,
+    )
+
+
+def box_field(lx: float, ly: float, h: float, divisions: int = 2, case_id: str = "C1") -> FemField:
+    """Bloco inteiro em tetraedros quadráticos (6 por cubo, Kuhn), com σ3 = −z/100 MPa e
+    deslocamento uz = −z/1000 mm: compressão e descida crescem para o topo."""
+    n = 2 * divisions  # grade dobrada: os nós de meio de aresta caem em índices inteiros
+    index: dict[tuple[int, int, int], int] = {}
+    tetrahedra: list[int] = []
+    edges = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)]  # ordem do C3D10
+    for i, j, k in itertools.product(range(0, n, 2), repeat=3):
+        for order in itertools.permutations(range(3)):
+            corner = [i, j, k]
+            corners = [tuple(corner)]
+            for axis in order:
+                corner[axis] += 2
+                corners.append(tuple(corner))
+            a, b, c = ([q - p for p, q in zip(corners[0], v, strict=True)] for v in corners[1:])
+            if (
+                a[0] * (b[1] * c[2] - b[2] * c[1])
+                - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0])
+                < 0
+            ):  # volume positivo, como o gmsh entrega
+                corners[1], corners[2] = corners[2], corners[1]
+            mids = [
+                tuple((a + b) // 2 for a, b in zip(corners[p], corners[q], strict=True))
+                for p, q in edges
+            ]
+            for key in (*corners, *mids):
+                tetrahedra.append(index.setdefault(key, len(index)))  # type: ignore[arg-type]
+    nodes: list[float] = [0.0] * (3 * len(index))
+    for (i, j, k), node in index.items():
+        nodes[3 * node : 3 * node + 3] = (lx * (i / n - 0.5), ly * (j / n - 0.5), h * k / n)
+    z = nodes[2::3]
+    return FemField(
+        case_id=case_id,
+        nodes=tuple(nodes),
+        tetrahedra=tuple(tetrahedra),
+        displacements=tuple(c for zi in z for c in (0.0, 0.0, -zi / 1000.0)),
+        sigma3=tuple(-zi / 100.0 for zi in z),
     )
