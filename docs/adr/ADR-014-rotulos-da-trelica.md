@@ -9,7 +9,10 @@
 - Decisão:
   1. `viz.scene.CapScene` ganha `labels`: textos com posição e cor, sem Qt. Uma função pura
      `truss_labels(geometry, case, reactions, layout, gamma_n, unit)` monta:
-     - em cada biela e tirante, a força de cálculo no meio da barra, na cor da barra;
+     - em cada biela e tirante, a força de cálculo no meio da barra, na cor da barra. Barras
+       simétricas em relação aos eixos do estaqueamento e com a mesma força levam um só
+       rótulo, com "(x2)" ou "(x4)", na barra mais à frente na vista isométrica (ajuste de
+       21/10/2026, pedido por Rodrigo depois do teste no Windows: os rótulos se sobrepunham);
      - em cada pilar, acima dele, `Nk` (quando informado), `Fd` (a carga da tabela, já
        majorada por γf) e `Nd = γn·Fd` (02-metodos §2, D3);
      - em cada estaca, logo abaixo do bloco, `Rk` (quando há Nk em todos os pilares do caso) e
